@@ -19,6 +19,8 @@ python3 scripts/generate_charts.py results/run_*/
 cat results/run_*/BENCHMARK_REPORT.md
 ```
 
+**Fast Alternative**: For small-scale testing (10M rows, 2-3 minutes, 4 variants including PAX no-cluster control), see the [Small-Scale Testing](#-small-scale-testing-4-variant-approach) section below.
+
 ---
 
 ## 📁 File Navigation
@@ -158,6 +160,82 @@ psql -f sql/06_collect_metrics.sql    # 5 min
 
 ---
 
+## 🧪 Small-Scale Testing (4-Variant Approach)
+
+**For incremental testing, debugging, or isolating clustering effects:**
+
+### Why 4 Variants?
+- **AO**: Row-oriented baseline
+- **AOCO**: Column-oriented baseline (current best practice)
+- **PAX (clustered)**: PAX with Z-order clustering
+- **PAX (no-cluster)**: PAX without clustering (control group)
+
+The 4th variant isolates clustering impact on storage and performance.
+
+### Quick 10M Row Test (2-3 minutes)
+
+```bash
+# Clean start
+psql postgres -c "DROP SCHEMA IF EXISTS benchmark CASCADE; CREATE SCHEMA benchmark;"
+
+# Run all phases with small dataset
+psql postgres -f sql/01_setup_schema.sql && \
+psql postgres -f sql/02_create_variants.sql && \
+psql postgres -f sql/03_generate_data_SMALL.sql && \
+psql postgres -f sql/04_optimize_pax.sql && \
+psql postgres -f sql/05_test_sample_queries.sql && \
+psql postgres -f sql/06_collect_metrics.sql
+```
+
+### Adjust Dataset Size
+Edit `sql/03_generate_data_SMALL.sql` (line ~30):
+```sql
+-- Change 10M to desired size
+FROM generate_series(1, 10000000) gs;  -- 100K, 1M, 10M, 50M...
+```
+
+### Expected Results (10M rows)
+| Variant | Storage | Speed vs AOCO | Memory |
+|---------|---------|---------------|--------|
+| **AO** | 1,128 MB | 3.5x slower | 345 KB |
+| **AOCO** | 710 MB | Baseline | 538 KB |
+| **PAX (clustered)** | 2,000 MB ❌ | 1.3x slower | 16,390 KB ❌ |
+| **PAX (no-cluster)** | 752 MB ✅ | 2.0x slower | 149 KB ✅ |
+
+**Key Finding**: Clustering causes 2.66x storage bloat (752 MB → 2,000 MB)
+
+### Capture Test Configuration
+```bash
+# Get cluster topology
+psql postgres -c "SELECT * FROM gp_segment_configuration ORDER BY content, role;"
+
+# Get Cloudberry version
+psql postgres -c "SELECT version();"
+
+# Check PAX extension
+psql postgres -c "SELECT amname FROM pg_am WHERE amname = 'pax';"
+```
+
+### Viewing Results
+```bash
+# Quick summary
+cat results/QUICK_SUMMARY.md
+
+# Full analysis
+cat results/4-variant-test-10M-rows.md
+
+# Configuration log
+cat results/test-config-2025-10-29.log
+```
+
+### Scaling Strategy
+1. Start: **100K rows** (test setup, ~10 seconds)
+2. Scale: **1M rows** (verify queries work, ~30 seconds)
+3. Validate: **10M rows** (production-like behavior, ~2 minutes)
+4. Full test: **200M rows** (run_full_benchmark.sh, 2-4 hours)
+
+---
+
 ## 💡 Pro Tips
 
 1. **Enable debug** to see sparse filtering in action:
@@ -224,6 +302,18 @@ results/run_YYYYMMDD_HHMMSS/
 ├── comparison_table.md
 └── BENCHMARK_REPORT.md
 ```
+
+### Small-Scale Testing Results
+
+When running 4-variant testing (manual execution):
+```
+results/
+├── QUICK_SUMMARY.md                   # Executive summary
+├── 4-variant-test-10M-rows.md         # Full analysis (15 pages)
+└── test-config-2025-10-29.log         # Reproduction guide
+```
+
+**Note**: run_full_benchmark.sh only tests 3 variants. For 4-variant testing, use manual execution as documented in the "Small-Scale Testing" section above.
 
 ---
 
