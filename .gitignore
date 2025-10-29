@@ -1,0 +1,38 @@
+# PAX Benchmark - Git Ignore
+
+# Results directory (generated during execution)
+results/
+!results/.gitkeep
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Generated charts (optional - can commit example charts)
+visuals/charts/*.png
+!visuals/charts/.gitkeep
+
+# Backup files
+*.bak
+*~
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+.temp/
