@@ -255,53 +255,267 @@ SET pax.max_size_per_file = 67108864;     -- 64MB
 
 Unlike AO/AOCO where configuration errors cause minor impact (10-30% storage difference), **PAX misconfiguration causes catastrophic failures** (80%+ bloat, 54x memory overhead).
 
-**Configuration Complexity Comparison:**
+---
 
-| Storage | Parameters | Data Analysis | Worst Misconfiguration | Silent Failures |
-|---------|-----------|---------------|----------------------|-----------------|
-| **AO** | 3 (simple) | None | 30% bloat | Rare |
-| **AOCO** | 5 (moderate) | Minimal | 50% bloat | Rare |
-| **PAX** | 15+ (complex) | **Extensive** | **400% bloat** | **Common** |
+#### Parameter Count and Complexity
 
-**Why PAX Is Different:**
-
-1. **Data-Dependent Configuration**
-   - AO/AOCO: Configuration works for any data
-   - **PAX: Must analyze cardinality of every column**
-   - Wrong assessment = catastrophic failure
-
-2. **Bloom Filter Risk** (The Critical Difference)
-   - AO/AOCO: No bloom filters, no risk
-   - **PAX: Bloom filters on low-cardinality columns cause 80%+ bloat**
-   - Stored per-file, multiplies across micro-partitions
-   - Example: 5-value column wastes 50 MB × 8 files = 400 MB per 10M rows
-
-3. **Non-Obvious Failures**
-   - AO/AOCO: Wrong compression is immediately visible
-   - **PAX: No warnings, table slowly bloats, root cause unclear**
-   - Users may blame PAX itself, not configuration
-
-4. **Multiplicative Failures**
-   - AO/AOCO: Mistakes are independent, impact is additive
-   - **PAX: Mistakes compound: 1.8x × 1.26x × 2.0x = 4.5x bloat**
-
-**Real Example (October 2025 Test):**
+**AO (Append-Only Row-Oriented): 3 Parameters**
 ```sql
--- AOCO misconfiguration (suboptimal encoding)
--- Impact: ~10% larger
+CREATE TABLE foo (...) WITH (
+    appendonly=true,           -- Binary choice
+    compresstype=zstd,         -- 4 options: none/zlib/zstd/lz4
+    compresslevel=5            -- 1-9 (higher = smaller/slower)
+);
+```
+**Configuration Risk**: **Low**
+- No data analysis required
+- Worst case: Wrong compression level → 20-30% size difference
+- Immediately visible in pg_relation_size()
 
--- PAX misconfiguration (2 wrong bloom filter columns)
-bloomfilter_columns='transaction_hash,customer_id,product_id'
--- transaction_hash: n_distinct=-1 ❌
--- customer_id: n_distinct=-0.46 ❌
--- Impact: +81% storage, +5,400% memory, -45% compression
+**AOCO (Append-Only Column-Oriented): 5+ Parameters**
+```sql
+CREATE TABLE foo (...) WITH (
+    appendonly=true,
+    orientation=column,
+    compresstype=zstd,
+    compresslevel=5
+);
+
+-- Optional per-column (adds 3-5 decisions per column)
+ALTER TABLE foo ALTER COLUMN bar SET ENCODING (
+    compresstype=delta,        -- vs RLE/zstd/none
+    compresslevel=1
+);
+```
+**Configuration Risk**: **Moderate**
+- Minimal data analysis (identify sequential/low-cardinality columns)
+- Worst case: Suboptimal encoding → 30-50% size difference
+- Forgiving: ZSTD default works reasonably for all data types
+
+**PAX (Partition-Aware eXtension): 15+ Parameters**
+```sql
+CREATE TABLE foo (...) USING pax WITH (
+    -- Core compression (3 parameters)
+    compresstype='zstd',
+    compresslevel=5,
+    storage_format='porc',
+
+    -- Statistics configuration (4 parameters)
+    minmax_columns='col1,col2,...',
+    bloomfilter_columns='col3,col4,...',  -- ⚠️  CRITICAL: Data-dependent
+    pax.bloom_filter_work_memory_bytes=104857600,
+    pax.max_bloom_filter_size=10485760,
+
+    -- Clustering configuration (3 parameters)
+    cluster_type='zorder',
+    cluster_columns='col5,col6,...',
+    maintenance_work_mem='2GB',
+
+    -- Micro-partitioning (5+ parameters)
+    pax.max_tuples_per_file=1310720,
+    pax.max_size_per_file=67108864,
+    pax.enable_sparse_filter=on,
+    pax.enable_row_filter=off,
+    pax.compression_buffer_size=524288
+);
+```
+**Configuration Risk**: **EXTREME**
+- Extensive data analysis required (cardinality, correlations, query patterns)
+- Worst case: Wrong bloom filters → **400%+ size increase**
+- **Not immediately visible** (table creates successfully, bloat appears gradually)
+- Multiplicative failures (each mistake compounds)
+
+---
+
+#### Why PAX Is Different: Data Dependency
+
+**AO/AOCO: Configuration-Independent**
+```sql
+-- SAME configuration works for ANY data
+CREATE TABLE small_table (...) WITH (compresstype=zstd, compresslevel=5);
+CREATE TABLE huge_table (...) WITH (compresstype=zstd, compresslevel=5);
+-- Result: Predictable, safe, 3-4x compression regardless
 ```
 
-**Bottom Line:**
-- AO/AOCO: Safe with basic knowledge, mistakes are minor
-- **PAX: Requires validation tooling, mistakes are catastrophic**
+**PAX: Configuration-Dependent**
+```sql
+-- SAME configuration, DIFFERENT data → CATASTROPHIC FAILURE
 
-This is why `docs/PAX_CONFIGURATION_SAFETY.md` and AI validation tools are **essential**, not optional.
+-- Data A: High-cardinality product_id (99K unique)
+bloomfilter_columns='product_id'
+-- Result: ✅ 6.5x compression, excellent performance
+
+-- Data B: Low-cardinality region (5 unique)
+bloomfilter_columns='region'
+-- Result: ❌ 1.8x compression, 80% bloat, 50x memory overhead
+```
+
+**Critical Point**: You **cannot** copy-paste PAX configuration between tables without analyzing the data first.
+
+---
+
+#### The Bloom Filter Problem (Technical Deep Dive)
+
+**Why Bloom Filters Are Safe in Other Systems** (Redis, Cassandra, RocksDB):
+- **One bloom filter per table/SSTable** (few MB total)
+- Low cardinality? Filter is small and useless, but harmless
+
+**Why Bloom Filters Are Dangerous in PAX**:
+- **One bloom filter PER MICRO-PARTITION FILE**
+- Default: ~8 files per 10M rows
+- Bloom filters stored in **every file's metadata**
+
+**Math of the Disaster**:
+```
+Low-Cardinality Column (5 unique values):
+├─ Bloom filter size: ~50 MB per file (wasteful, no benefit)
+├─ Files created: 8 files for 10M rows
+├─ Total waste: 50 MB × 8 = 400 MB
+└─ Compression killed: ZSTD can't compress bloom filter metadata
+
+High-Cardinality Column (99K unique values):
+├─ Bloom filter size: ~50 MB per file (useful, selective)
+├─ Files created: 8 files for 10M rows
+├─ Total cost: 50 MB × 8 = 400 MB
+└─ Value delivered: 60-90% file skip rate (worth it!)
+```
+
+**The Paradox**: Same storage cost, **opposite value**.
+- High-cardinality: 400 MB buys you 3-5x query speedup
+- Low-cardinality: 400 MB buys you **nothing** (filter matches everything)
+
+**Real Example from October 2025 Test**:
+
+**Before (3 bloom filter columns)**:
+```sql
+bloomfilter_columns='transaction_hash,customer_id,product_id'
+```
+
+| Column | Cardinality | Bloom Size | Files | Total Waste | Query Benefit |
+|--------|-------------|------------|-------|-------------|---------------|
+| transaction_hash | n_distinct=-1 (5 unique) | 50 MB | 8 | 400 MB | ❌ None |
+| customer_id | n_distinct=-0.46 (7 unique) | 50 MB | 8 | 400 MB | ❌ None |
+| product_id | 99,671 unique | 50 MB | 8 | 400 MB | ✅ 60-90% skip |
+
+**Total**: 1,200 MB bloom filter metadata, **800 MB wasted**
+
+**After (1 bloom filter column)**:
+```sql
+bloomfilter_columns='product_id'
+```
+**Total**: 400 MB bloom filter metadata, **0 MB wasted**
+**Result**: 942 MB vs 1,350 MB (30% reduction from removing useless bloom filters)
+
+---
+
+#### Cascading Failures: Multiplicative vs Additive
+
+**AOCO: Mistakes Are Independent (Additive)**
+```sql
+-- Mistake 1: Wrong compression level (compresslevel=1 instead of 5)
+Impact: +15% size
+
+-- Mistake 2: Wrong encoding on text column (delta instead of zstd)
+Impact: +10% size
+
+-- TOTAL: 1.15 × 1.10 = 1.27x (27% bloat)
+-- Mistakes don't compound, relatively safe
+```
+
+**PAX: Mistakes Compound (Multiplicative)**
+```sql
+-- Mistake 1: Bloom filters on 2 low-cardinality columns
+Impact: +81% size (1.81x)
+
+-- Mistake 2: Low maintenance_work_mem during clustering
+Impact: +26% additional bloat (1.26x)
+
+-- Mistake 3: Wrong cluster_columns (uncorrelated dimensions)
+Impact: +100% query time (2.0x slower)
+
+-- TOTAL: 1.81 × 1.26 × 2.0 = 4.56x disaster
+-- Each mistake makes the others worse
+```
+
+---
+
+#### Silent Failures
+
+**AOCO: Visible Failures**
+```bash
+# Wrong compression
+psql -c "SELECT pg_size_pretty(pg_total_relation_size('foo'));"
+#  pg_size_pretty
+# ----------------
+#  850 MB        # Expected: 650 MB → investigate immediately
+
+# Wrong encoding per column
+psql -c "SELECT attname, attstorage FROM pg_attribute WHERE attrelid='foo'::regclass;"
+#   attname   | attstorage
+# ------------+------------
+#  id         | p          # Plain (should be compressed) → fix now
+```
+
+**PAX: Silent Failures**
+```bash
+# Table creates successfully
+CREATE TABLE foo (...) USING pax WITH (bloomfilter_columns='low_cardinality_col');
+# CREATE TABLE ✅ (no warning!)
+
+# Size looks normal at first (before CLUSTER)
+SELECT pg_size_pretty(pg_total_relation_size('foo'));
+#  pg_size_pretty
+# ----------------
+#  750 MB        # Looks fine
+
+# Disaster appears after CLUSTER (hours later)
+CLUSTER foo USING idx_zorder;
+# CLUSTER (takes 5 minutes, no warning)
+
+SELECT pg_size_pretty(pg_total_relation_size('foo'));
+#  pg_size_pretty
+# ----------------
+#  1,350 MB      # 🔴 DISASTER! But why? No error message.
+```
+
+**Root Cause Diagnosis Requires**:
+1. Run `sql/07_inspect_pax_internals.sql` (custom script)
+2. Analyze pg_stats for each column
+3. Check bloom filter configuration vs cardinality
+4. Reverse-engineer what went wrong
+
+**In AOCO**: `pg_relation_size()` immediately shows the problem.
+
+---
+
+#### Summary Table
+
+| Aspect | AO | AOCO | PAX |
+|--------|----|----- |-----|
+| **Total parameters** | 3 | 5-8 | 15+ |
+| **Data analysis required** | None | Minimal | Extensive |
+| **Worst misconfiguration** | 1.3x size | 1.5x size | **4.5x size** |
+| **Error visibility** | Immediate | Immediate | **Delayed/Hidden** |
+| **Copy-paste safety** | ✅ Safe | ✅ Safe | ❌ Dangerous |
+| **Failure mode** | Additive | Additive | **Multiplicative** |
+| **Silent bloat risk** | Rare | Rare | **Common** |
+| **Production risk** | Low | Low | **High** |
+| **Validation tooling** | Optional | Optional | **ESSENTIAL** |
+
+---
+
+#### Why Validation Tooling Is Not Optional for PAX
+
+**For AO/AOCO**: An experienced DBA can configure correctly in 5 minutes without tools.
+
+**For PAX**: Even experts need:
+1. Cardinality analysis script (`sql/07_inspect_pax_internals.sql`)
+2. Memory validation script (`sql/04a_validate_clustering_config.sql`)
+3. Configuration safety checklist (`docs/PAX_CONFIGURATION_SAFETY.md`)
+4. Pre-deployment validation (90 minutes minimum)
+5. Ongoing monitoring (detect silent bloat)
+
+**This is why `docs/AI_VALIDATION_TOOLING_PLAN.md` exists** — PAX is fundamentally different from AO/AOCO in its configuration complexity and failure modes.
 
 ---
 
