@@ -45,19 +45,21 @@ SET pax.bloom_filter_work_memory_bytes = 10485760;  -- 10MB
 
 -- =============================================
 -- Verify Pre-Clustering Statistics
+-- NOTE: get_pax_aux_table() not available in this PAX version
 -- =============================================
 
 \echo 'Pre-clustering PAX table statistics:'
 \echo ''
+\echo '  (PAX introspection functions not available in this version)'
+\echo '  Table sizes before clustering:'
 
 SELECT
-    COUNT(*) AS num_files,
-    pg_size_pretty(SUM((ptstatistics->>'blockSize')::BIGINT)) AS total_size,
-    ROUND(AVG((ptstatistics->>'numRows')::BIGINT)) AS avg_rows_per_file,
-    MIN((ptstatistics->>'numRows')::BIGINT) AS min_rows,
-    MAX((ptstatistics->>'numRows')::BIGINT) AS max_rows,
-    SUM(CASE WHEN ptisclustered THEN 1 ELSE 0 END) AS clustered_files
-FROM get_pax_aux_table('benchmark.sales_fact_pax');
+    'PAX (to be clustered)' AS variant,
+    pg_size_pretty(pg_total_relation_size('benchmark.sales_fact_pax')) AS size
+UNION ALL
+SELECT
+    'PAX no-cluster (control)',
+    pg_size_pretty(pg_total_relation_size('benchmark.sales_fact_pax_nocluster'));
 
 \echo ''
 
@@ -83,15 +85,15 @@ CLUSTER benchmark.sales_fact_pax;
 
 \echo 'Post-clustering PAX table statistics:'
 \echo ''
+\echo '  Table sizes after clustering:'
 
 SELECT
-    COUNT(*) AS num_files,
-    pg_size_pretty(SUM((ptstatistics->>'blockSize')::BIGINT)) AS total_size,
-    ROUND(AVG((ptstatistics->>'numRows')::BIGINT)) AS avg_rows_per_file,
-    MIN((ptstatistics->>'numRows')::BIGINT) AS min_rows,
-    MAX((ptstatistics->>'numRows')::BIGINT) AS max_rows,
-    SUM(CASE WHEN ptisclustered THEN 1 ELSE 0 END) AS clustered_files
-FROM get_pax_aux_table('benchmark.sales_fact_pax');
+    'PAX (clustered)' AS variant,
+    pg_size_pretty(pg_total_relation_size('benchmark.sales_fact_pax')) AS size
+UNION ALL
+SELECT
+    'PAX no-cluster (unchanged)',
+    pg_size_pretty(pg_total_relation_size('benchmark.sales_fact_pax_nocluster'));
 
 \echo ''
 
@@ -111,6 +113,9 @@ ANALYZE benchmark.sales_fact_aoco;
 ANALYZE benchmark.sales_fact_pax;
 \echo '  ✓ sales_fact_pax analyzed'
 
+ANALYZE benchmark.sales_fact_pax_nocluster;
+\echo '  ✓ sales_fact_pax_nocluster analyzed'
+
 \echo ''
 
 -- =============================================
@@ -129,9 +134,13 @@ WITH storage_stats AS (
            pg_total_relation_size('benchmark.sales_fact_aoco'),
            2
     UNION ALL
-    SELECT 'PAX',
+    SELECT 'PAX (clustered)',
            pg_total_relation_size('benchmark.sales_fact_pax'),
            3
+    UNION ALL
+    SELECT 'PAX (no-cluster)',
+           pg_total_relation_size('benchmark.sales_fact_pax_nocluster'),
+           4
 )
 SELECT variant,
        pg_size_pretty(size_bytes) AS size,

@@ -31,12 +31,19 @@ WITH storage_stats AS (
            pg_relation_size('benchmark.sales_fact_aoco'),
            2
     UNION ALL
-    SELECT 'PAX',
+    SELECT 'PAX (clustered)',
            pg_total_relation_size('benchmark.sales_fact_pax'),
            pg_relation_size('benchmark.sales_fact_pax'),
            pg_total_relation_size('benchmark.sales_fact_pax') -
            pg_relation_size('benchmark.sales_fact_pax'),
            3
+    UNION ALL
+    SELECT 'PAX (no-cluster)',
+           pg_total_relation_size('benchmark.sales_fact_pax_nocluster'),
+           pg_relation_size('benchmark.sales_fact_pax_nocluster'),
+           pg_total_relation_size('benchmark.sales_fact_pax_nocluster') -
+           pg_relation_size('benchmark.sales_fact_pax_nocluster'),
+           4
 ),
 base AS (
     SELECT total_size AS aoco_size
@@ -60,35 +67,13 @@ ORDER BY s.sort_order;
 
 -- =============================================
 -- PAX Micro-Partition Statistics
+-- NOTE: get_pax_aux_table() not available in this PAX version
 -- =============================================
 
 \echo 'PAX MICRO-PARTITION DETAILS'
 \echo '==========================='
 \echo ''
-
-WITH pax_stats AS (
-    SELECT
-        COUNT(*) AS num_files,
-        SUM((ptstatistics->>'blockSize')::BIGINT) AS total_bytes,
-        AVG((ptstatistics->>'numRows')::BIGINT) AS avg_rows_per_file,
-        MIN((ptstatistics->>'numRows')::BIGINT) AS min_rows,
-        MAX((ptstatistics->>'numRows')::BIGINT) AS max_rows,
-        SUM(CASE WHEN ptisclustered THEN 1 ELSE 0 END) AS clustered_files,
-        SUM((ptstatistics->>'numRows')::BIGINT) AS total_rows
-    FROM get_pax_aux_table('benchmark.sales_fact_pax')
-)
-SELECT
-    num_files,
-    pg_size_pretty(total_bytes) AS total_size,
-    total_rows,
-    ROUND(avg_rows_per_file) AS avg_rows_per_file,
-    min_rows,
-    max_rows,
-    clustered_files,
-    ROUND(100.0 * clustered_files / num_files, 2) AS pct_clustered,
-    pg_size_pretty(total_bytes / num_files) AS avg_file_size
-FROM pax_stats;
-
+\echo '  (Detailed PAX introspection not available in this version)'
 \echo ''
 
 -- =============================================
@@ -103,7 +88,9 @@ SELECT 'AO' AS variant, COUNT(*) AS row_count FROM benchmark.sales_fact_ao
 UNION ALL
 SELECT 'AOCO', COUNT(*) FROM benchmark.sales_fact_aoco
 UNION ALL
-SELECT 'PAX', COUNT(*) FROM benchmark.sales_fact_pax
+SELECT 'PAX (clustered)', COUNT(*) FROM benchmark.sales_fact_pax
+UNION ALL
+SELECT 'PAX (no-cluster)', COUNT(*) FROM benchmark.sales_fact_pax_nocluster
 ORDER BY variant;
 
 \echo ''
@@ -117,8 +104,8 @@ ORDER BY variant;
 \echo ''
 
 WITH raw_estimate AS (
-    -- Estimate uncompressed size based on column types
-    SELECT (200000000 * (
+    -- Estimate uncompressed size based on column types and actual row count
+    SELECT ((SELECT COUNT(*) FROM benchmark.sales_fact_pax)::BIGINT * (
         8 +   -- DATE (sale_date)
         8 +   -- TIMESTAMP (sale_timestamp)
         8 +   -- BIGINT (order_id)
@@ -154,9 +141,13 @@ compressed AS (
            pg_total_relation_size('benchmark.sales_fact_aoco'),
            2
     UNION ALL
-    SELECT 'PAX',
+    SELECT 'PAX (clustered)',
            pg_total_relation_size('benchmark.sales_fact_pax'),
            3
+    UNION ALL
+    SELECT 'PAX (no-cluster)',
+           pg_total_relation_size('benchmark.sales_fact_pax_nocluster'),
+           4
 )
 SELECT c.variant,
        pg_size_pretty(r.estimated_raw_bytes) AS est_uncompressed,
@@ -193,10 +184,17 @@ WHERE sale_date BETWEEN '2023-01-01' AND '2023-01-31'
   AND region = 'North America';
 
 \echo ''
-\echo '--- PAX Variant (with sparse filtering) ---'
+\echo '--- PAX Clustered (with sparse filtering) ---'
 SET pax.enable_sparse_filter = on;
 SELECT COUNT(*), SUM(total_amount)
 FROM benchmark.sales_fact_pax
+WHERE sale_date BETWEEN '2023-01-01' AND '2023-01-31'
+  AND region = 'North America';
+
+\echo ''
+\echo '--- PAX No-Cluster (sparse filtering, no Z-order) ---'
+SELECT COUNT(*), SUM(total_amount)
+FROM benchmark.sales_fact_pax_nocluster
 WHERE sale_date BETWEEN '2023-01-01' AND '2023-01-31'
   AND region = 'North America';
 

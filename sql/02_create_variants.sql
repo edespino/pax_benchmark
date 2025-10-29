@@ -131,52 +131,79 @@ USING pax WITH (
 )
 DISTRIBUTED BY (order_id);
 
-\echo '  ✓ sales_fact_pax created (base table)'
+\echo '  ✓ sales_fact_pax created (will be clustered)'
+\echo ''
+
+-- =============================================
+-- Variant 4: PAX No-Clustering (Control Group)
+-- Same as PAX but WITHOUT Z-order clustering
+-- Helps isolate clustering impact on storage and performance
+-- =============================================
+
+\echo 'Creating Variant 4: PAX No-Clustering (control)...'
+
+CREATE TABLE benchmark.sales_fact_pax_nocluster (LIKE sales_fact_template)
+USING pax WITH (
+    -- Primary compression strategy
+    compresstype='zstd',
+    compresslevel=5,
+
+    -- Statistics for sparse filtering
+    minmax_columns='sale_date,order_id,customer_id,product_id,total_amount,quantity',
+
+    -- Bloom filters
+    bloomfilter_columns='region,country,sales_channel,order_status,product_category,transaction_hash',
+
+    -- NO clustering configured (this is the difference)
+    -- cluster_type and cluster_columns intentionally omitted
+
+    -- Storage format
+    storage_format='porc'
+)
+DISTRIBUTED BY (order_id);
+
+\echo '  ✓ sales_fact_pax_nocluster created (no clustering)'
 \echo ''
 
 -- =============================================
 -- PAX Per-Column Encoding Optimization
--- Apply specialized encodings for different column types
+-- NOTE: ALTER COLUMN ... SET ENCODING syntax not supported in this PAX version
+-- Per-column encodings would provide additional compression benefits:
+--   - Delta encoding: For sequential IDs/dates (8x compression)
+--   - RLE encoding: For low-cardinality columns (23x compression)
+--   - ZSTD level 9: For text fields (4x compression)
+--
+-- PAX table still benefits from:
+--   - Sparse filtering (min/max statistics)
+--   - Bloom filters (high-cardinality columns)
+--   - Z-order clustering (multi-dimensional queries)
+--   - Base ZSTD compression (level 5)
 -- =============================================
 
-\echo 'Applying per-column encoding to PAX table...'
-
--- Delta encoding for sequential/monotonic columns
-ALTER TABLE benchmark.sales_fact_pax
-    ALTER COLUMN sale_date SET ENCODING (compresstype=delta);
-
-ALTER TABLE benchmark.sales_fact_pax
-    ALTER COLUMN order_id SET ENCODING (compresstype=delta);
-
-ALTER TABLE benchmark.sales_fact_pax
-    ALTER COLUMN quantity SET ENCODING (compresstype=delta);
-
-\echo '  ✓ Delta encoding applied to date/ID columns'
-
--- RLE encoding for low-cardinality columns
-ALTER TABLE benchmark.sales_fact_pax
-    ALTER COLUMN priority SET ENCODING (compresstype=RLE_TYPE);
-
-ALTER TABLE benchmark.sales_fact_pax
-    ALTER COLUMN is_return SET ENCODING (compresstype=RLE_TYPE);
-
-ALTER TABLE benchmark.sales_fact_pax
-    ALTER COLUMN order_status SET ENCODING (compresstype=RLE_TYPE);
-
-ALTER TABLE benchmark.sales_fact_pax
-    ALTER COLUMN sales_channel SET ENCODING (compresstype=RLE_TYPE);
-
-\echo '  ✓ RLE encoding applied to categorical columns'
-
--- High compression for text fields
-ALTER TABLE benchmark.sales_fact_pax
-    ALTER COLUMN product_category SET ENCODING (compresstype=zstd, compresslevel=9);
-
-ALTER TABLE benchmark.sales_fact_pax
-    ALTER COLUMN customer_segment SET ENCODING (compresstype=zstd, compresslevel=9);
-
-\echo '  ✓ High-level ZSTD applied to text columns'
+\echo 'PAX per-column encoding: SKIPPED (not supported in this version)'
+\echo '  → Using base ZSTD compression (level 5)'
+\echo '  → Sparse filtering and bloom filters enabled'
 \echo ''
+
+-- Commented out - not supported in Cloudberry 3.0.0-devel
+-- ALTER TABLE benchmark.sales_fact_pax
+--     ALTER COLUMN sale_date SET ENCODING (compresstype=delta);
+-- ALTER TABLE benchmark.sales_fact_pax
+--     ALTER COLUMN order_id SET ENCODING (compresstype=delta);
+-- ALTER TABLE benchmark.sales_fact_pax
+--     ALTER COLUMN quantity SET ENCODING (compresstype=delta);
+-- ALTER TABLE benchmark.sales_fact_pax
+--     ALTER COLUMN priority SET ENCODING (compresstype=RLE_TYPE);
+-- ALTER TABLE benchmark.sales_fact_pax
+--     ALTER COLUMN is_return SET ENCODING (compresstype=RLE_TYPE);
+-- ALTER TABLE benchmark.sales_fact_pax
+--     ALTER COLUMN order_status SET ENCODING (compresstype=RLE_TYPE);
+-- ALTER TABLE benchmark.sales_fact_pax
+--     ALTER COLUMN sales_channel SET ENCODING (compresstype=RLE_TYPE);
+-- ALTER TABLE benchmark.sales_fact_pax
+--     ALTER COLUMN product_category SET ENCODING (compresstype=zstd, compresslevel=9);
+-- ALTER TABLE benchmark.sales_fact_pax
+--     ALTER COLUMN customer_segment SET ENCODING (compresstype=zstd, compresslevel=9);
 
 -- =============================================
 -- Verify table creation
@@ -189,7 +216,8 @@ SELECT tablename,
        CASE
            WHEN tablename LIKE '%_ao' THEN 'AO (baseline)'
            WHEN tablename LIKE '%_aoco' THEN 'AOCO (best practice)'
-           WHEN tablename LIKE '%_pax' THEN 'PAX (optimized)'
+           WHEN tablename = 'sales_fact_pax' THEN 'PAX (with clustering)'
+           WHEN tablename LIKE '%_pax_nocluster' THEN 'PAX (no clustering)'
        END AS variant,
        pg_size_pretty(pg_total_relation_size('benchmark.'||tablename)) AS current_size
 FROM pg_tables
