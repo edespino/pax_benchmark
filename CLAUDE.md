@@ -249,6 +249,62 @@ SET pax.max_size_per_file = 67108864;     -- 64MB
    - Default: 64MB files, 131K tuples/group
    - Rich protobuf metadata per file
 
+### Why PAX Configuration Is Critical (vs AO/AOCO)
+
+**⚠️  CRITICAL UNDERSTANDING: PAX is uniquely dangerous when misconfigured**
+
+Unlike AO/AOCO where configuration errors cause minor impact (10-30% storage difference), **PAX misconfiguration causes catastrophic failures** (80%+ bloat, 54x memory overhead).
+
+**Configuration Complexity Comparison:**
+
+| Storage | Parameters | Data Analysis | Worst Misconfiguration | Silent Failures |
+|---------|-----------|---------------|----------------------|-----------------|
+| **AO** | 3 (simple) | None | 30% bloat | Rare |
+| **AOCO** | 5 (moderate) | Minimal | 50% bloat | Rare |
+| **PAX** | 15+ (complex) | **Extensive** | **400% bloat** | **Common** |
+
+**Why PAX Is Different:**
+
+1. **Data-Dependent Configuration**
+   - AO/AOCO: Configuration works for any data
+   - **PAX: Must analyze cardinality of every column**
+   - Wrong assessment = catastrophic failure
+
+2. **Bloom Filter Risk** (The Critical Difference)
+   - AO/AOCO: No bloom filters, no risk
+   - **PAX: Bloom filters on low-cardinality columns cause 80%+ bloat**
+   - Stored per-file, multiplies across micro-partitions
+   - Example: 5-value column wastes 50 MB × 8 files = 400 MB per 10M rows
+
+3. **Non-Obvious Failures**
+   - AO/AOCO: Wrong compression is immediately visible
+   - **PAX: No warnings, table slowly bloats, root cause unclear**
+   - Users may blame PAX itself, not configuration
+
+4. **Multiplicative Failures**
+   - AO/AOCO: Mistakes are independent, impact is additive
+   - **PAX: Mistakes compound: 1.8x × 1.26x × 2.0x = 4.5x bloat**
+
+**Real Example (October 2025 Test):**
+```sql
+-- AOCO misconfiguration (suboptimal encoding)
+-- Impact: ~10% larger
+
+-- PAX misconfiguration (2 wrong bloom filter columns)
+bloomfilter_columns='transaction_hash,customer_id,product_id'
+-- transaction_hash: n_distinct=-1 ❌
+-- customer_id: n_distinct=-0.46 ❌
+-- Impact: +81% storage, +5,400% memory, -45% compression
+```
+
+**Bottom Line:**
+- AO/AOCO: Safe with basic knowledge, mistakes are minor
+- **PAX: Requires validation tooling, mistakes are catastrophic**
+
+This is why `docs/PAX_CONFIGURATION_SAFETY.md` and AI validation tools are **essential**, not optional.
+
+---
+
 ### Benchmark Design
 
 **Dataset**: 200M rows, 25 columns, ~70GB per variant
@@ -256,10 +312,11 @@ SET pax.max_size_per_file = 67108864;     -- 64MB
 - Dimensions: 10M customers, 100K products
 - Patterns: Correlated (date+region), skewed, sparse fields
 
-**Three Variants**:
+**Four Variants**:
 1. **AO** - Append-Only row-oriented (baseline)
 2. **AOCO** - Append-Only column-oriented (current best practice)
-3. **PAX** - Optimized with all features enabled
+3. **PAX (clustered)** - Optimized with Z-order clustering
+4. **PAX (no-cluster)** - PAX without clustering (control group)
 
 **Query Categories** (20 queries):
 - **A (Q1-Q3)**: Sparse filtering effectiveness
