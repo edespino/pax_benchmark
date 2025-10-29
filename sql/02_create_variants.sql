@@ -121,14 +121,15 @@ USING pax WITH (
 
     -- bloom filters: High overhead, ONLY for high-cardinality (>1000 distinct) columns
     -- Used for: Equality and IN queries with many values
-    -- Cardinality analysis:
-    --   transaction_hash → 10M unique  ✅ EXCELLENT
-    --   customer_id      → 10M range   ✅ HIGH
-    --   product_id       → 100K range  ✅ MEDIUM-HIGH
-    --   region           → 5 values    ❌ TOO LOW (use minmax instead)
-    --   country          → 20 values   ❌ TOO LOW (use minmax instead)
-    --   sales_channel    → 3 values    ❌ TOO LOW (use minmax instead)
-    bloomfilter_columns='transaction_hash,customer_id,product_id',
+    -- Cardinality analysis (from sql/07_inspect_pax_internals.sql):
+    --   product_id       → 99,671 unique  ✅ HIGH CARDINALITY (keep)
+    --   transaction_hash → n_distinct=-1  ❌ VERY LOW (remove - use minmax)
+    --   customer_id      → n_distinct=-0.46  ❌ VERY LOW (remove - use minmax)
+    --   region           → 5 values    ❌ TOO LOW (already in minmax)
+    --   country          → 21 values   ❌ TOO LOW (already in minmax)
+    --   sales_channel    → 3 values    ❌ TOO LOW (already in minmax)
+    -- OPTIMIZED: Only product_id has sufficient cardinality for bloom filters
+    bloomfilter_columns='product_id',
 
     -- Z-order clustering for correlated dimensions
     -- sale_date + region are often queried together
@@ -160,8 +161,10 @@ USING pax WITH (
     -- Statistics for sparse filtering (OPTIMIZED)
     minmax_columns='sale_date,order_id,customer_id,product_id,total_amount,quantity,region,country,sales_channel,order_status',
 
-    -- Bloom filters (OPTIMIZED - high cardinality only)
-    bloomfilter_columns='transaction_hash,customer_id,product_id',
+    -- Bloom filters (OPTIMIZED - ONLY high cardinality >1000 distinct)
+    -- Only product_id qualifies (99,671 unique values)
+    -- transaction_hash and customer_id have very low cardinality (removed)
+    bloomfilter_columns='product_id',
 
     -- NO clustering configured (this is the difference from sales_fact_pax)
     -- cluster_type and cluster_columns intentionally omitted
