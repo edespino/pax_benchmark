@@ -193,6 +193,7 @@ psql postgres -c "DROP SCHEMA IF EXISTS benchmark CASCADE; CREATE SCHEMA benchma
 psql postgres -f sql/01_setup_schema.sql && \
 psql postgres -f sql/02_create_variants.sql && \
 psql postgres -f sql/03_generate_data_SMALL.sql && \
+psql postgres -f sql/04a_validate_clustering_config.sql && \
 psql postgres -f sql/04_optimize_pax.sql && \
 psql postgres -f sql/05_test_sample_queries.sql && \
 psql postgres -f sql/06_collect_metrics.sql
@@ -366,4 +367,4 @@ results/
 
 **Print this card for quick reference during benchmark execution!**
 
-_Last Updated: October 28, 2025_
+_Last Updated: October 29, 2025_
