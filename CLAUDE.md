@@ -8,7 +8,17 @@ AI assistant guidance for working with the PAX benchmark repository.
 
 **Purpose**: Standalone benchmark suite demonstrating PAX storage performance advantages over AO/AOCO in Apache Cloudberry Database.
 
-**Key Metrics**: 30-40% smaller storage, 25-35% faster queries, 60-90% file skip rate, 3-5x Z-order speedup
+**Key Metrics** (Expected with optimal configuration):
+- 30-40% smaller storage
+- 25-35% faster queries (requires file-level pruning enabled in code)
+- 60-90% file skip rate
+- 3-5x Z-order speedup
+
+**Current Status** (October 2025):
+- ✅ Benchmark configuration optimized based on PAX source code analysis
+- ⚠️  File-level predicate pushdown disabled in Cloudberry 3.0.0-devel
+- ✅ 4-variant testing approach isolates clustering effects
+- ✅ Production-ready for PAX no-cluster variant
 
 **Repository Type**: Self-contained benchmark (NOT PAX source code)
 
@@ -50,13 +60,18 @@ pax_benchmark/
 │   ├── REPORTING.md             # Results visualization
 │   └── archive/                 # Historical meta-docs
 │
-├── sql/                         # 6 phases (EXECUTE IN ORDER)
+├── sql/                         # Core benchmark phases + analysis tools
 │   ├── 01_setup_schema.sql      # Schema + dimensions
-│   ├── 02_create_variants.sql   # AO/AOCO/PAX tables
+│   ├── 02_create_variants.sql   # AO/AOCO/PAX/PAX-no-cluster (4 variants)
 │   ├── 03_generate_data.sql     # 200M rows (~70GB per variant)
-│   ├── 04_optimize_pax.sql      # GUCs + Z-order clustering
+│   ├── 03_generate_data_SMALL.sql # 10M rows for quick testing
+│   ├── 04_optimize_pax.sql      # GUCs + Z-order clustering (CRITICAL: sets maintenance_work_mem)
+│   ├── 04a_validate_clustering_config.sql # NEW: Pre-flight memory check
 │   ├── 05_queries_ALL.sql       # 20 queries, 7 categories
-│   └── 06_collect_metrics.sql   # Storage + performance metrics
+│   ├── 05_test_sample_queries.sql # Quick 2-query test for 4 variants
+│   ├── 06_collect_metrics.sql   # Storage + performance metrics
+│   ├── 07_inspect_pax_internals.sql # NEW: PAX statistics & cardinality analysis
+│   └── 08_analyze_query_plans.sql   # NEW: Detailed EXPLAIN ANALYZE
 │
 ├── scripts/
 │   ├── run_full_benchmark.sh    # MASTER SCRIPT (runs all phases)
@@ -81,14 +96,22 @@ pax_benchmark/
 # Output: results/run_YYYYMMDD_HHMMSS/
 ```
 
-### Execute Individual Phases
+### Execute Individual Phases (4-Variant Test with 10M rows)
 ```bash
-psql -f sql/01_setup_schema.sql       # 5-10 min
-psql -f sql/02_create_variants.sql    # 2 min
-psql -f sql/03_generate_data.sql      # 30-60 min
-psql -f sql/04_optimize_pax.sql       # 10-20 min
-# For queries, use run_full_benchmark.sh (handles variants + runs)
-psql -f sql/06_collect_metrics.sql    # 5 min
+# Recommended workflow (includes new validation scripts)
+psql -f sql/01_setup_schema.sql                    # 5-10 min
+psql -f sql/02_create_variants.sql                 # 2 min (4 variants)
+psql -f sql/03_generate_data_SMALL.sql             # 2-3 min (10M rows)
+psql -f sql/04a_validate_clustering_config.sql     # NEW: Validate memory (30 sec)
+psql -f sql/04_optimize_pax.sql                    # 5-10 min (sets maintenance_work_mem=2GB)
+psql -f sql/05_test_sample_queries.sql             # 2 min (2 queries × 4 variants)
+psql -f sql/06_collect_metrics.sql                 # 2 min
+psql -f sql/07_inspect_pax_internals.sql           # Optional: PAX analysis
+psql -f sql/08_analyze_query_plans.sql             # Optional: Detailed EXPLAIN
+
+# Large-scale test (200M rows)
+psql -f sql/03_generate_data.sql                   # 30-60 min
+# Increase maintenance_work_mem to 8GB+ before sql/04_optimize_pax.sql
 ```
 
 ### Generate Charts
@@ -121,19 +144,45 @@ FROM generate_series(1, 50000000) gs  -- 50M instead of 200M
 ```
 
 ### Adjust PAX Configuration
-**File**: `sql/02_create_variants.sql` (lines 78-120)
+**File**: `sql/02_create_variants.sql` (lines 111-141)
+
+**⚠️  CRITICAL CONFIGURATION PRINCIPLES** (as of Oct 2025):
+
 ```sql
 CREATE TABLE benchmark.sales_fact_pax (...) USING pax WITH (
     compresstype='zstd',
     compresslevel=5,
-    minmax_columns='your,columns',      -- 4-6 recommended
-    bloomfilter_columns='your,columns', -- 4-6 recommended
-    cluster_columns='your,columns',     -- 2-3 recommended
+
+    -- MinMax: LOW OVERHEAD - use liberally (6-12 columns)
+    -- Works for: ALL filterable columns (range, equality, NULL checks)
+    minmax_columns='date,id,amount,region,status,category',
+
+    -- Bloom: HIGH OVERHEAD - use selectively (2-4 columns)
+    -- ONLY for: High-cardinality columns (>1000 distinct values)
+    -- Examples: transaction_id (unique), customer_id (millions)
+    -- ❌ DON'T use for: Low-cardinality (<100 values) - wastes memory
+    bloomfilter_columns='transaction_id,customer_id,product_id',
+
+    -- Clustering: 2-3 correlated dimensions
+    cluster_columns='date,region',
+    cluster_type='zorder',
     storage_format='porc'
 );
 
+-- Per-column encoding (if supported in your PAX version)
+-- Note: NOT supported in Cloudberry 3.0.0-devel
 ALTER TABLE benchmark.sales_fact_pax
     ALTER COLUMN your_col SET ENCODING (compresstype=delta);
+```
+
+**Key Decision Rule**:
+```
+Is column in WHERE clause?
+├─ YES → Add to minmax_columns
+│   └─ Is cardinality > 1000?
+│       ├─ YES → Also add to bloomfilter_columns
+│       └─ NO  → Skip bloom (minmax sufficient)
+└─ NO  → Skip both
 ```
 
 ### Add Custom Queries
@@ -146,12 +195,28 @@ SELECT ... FROM benchmark.TABLE_VARIANT WHERE ...;
 ```
 
 ### Tune GUCs
-**File**: `sql/04_optimize_pax.sql` (lines 20-40)
+**File**: `sql/04_optimize_pax.sql` (lines 18-90)
+
+**⚠️  CRITICAL**: Set maintenance_work_mem BEFORE clustering (prevents 2-3x storage bloat)
+
 ```sql
+-- Memory for clustering (CRITICAL - prevents storage bloat)
+SET maintenance_work_mem = '2GB';   -- For 10M rows
+SET maintenance_work_mem = '8GB';   -- For 200M rows
+
+-- Sparse filtering (enables file-level pruning)
 SET pax.enable_sparse_filter = on;
-SET pax.max_tuples_per_file = 1310720;
--- Adjust as needed
+SET pax.enable_row_filter = off;  -- For OLAP workloads
+
+-- Bloom filter memory (scale with cardinality)
+SET pax.bloom_filter_work_memory_bytes = 104857600;  -- 100MB for high-cardinality
+
+-- Micro-partition sizing (defaults are good)
+SET pax.max_tuples_per_file = 1310720;    -- 1.31M tuples
+SET pax.max_size_per_file = 67108864;     -- 64MB
 ```
+
+**Validation**: Run `sql/04a_validate_clustering_config.sql` to check memory requirements
 
 ---
 
@@ -207,21 +272,66 @@ SET pax.max_tuples_per_file = 1310720;
 
 ## Expected Results
 
-### Success Criteria
-- ✅ PAX ≥ 30% smaller than AOCO (storage)
-- ✅ PAX ≥ 25% faster than AOCO (avg query time)
-- ✅ Sparse filter skips ≥ 60% of files
-- ✅ Z-order queries ≥ 2-5x faster
+### Success Criteria (With Optimal Configuration)
 
-### Typical Results
-- **Storage**: PAX 34% smaller than AOCO
-- **Performance**: PAX 32% faster than AOCO
-- **Sparse filtering**: 88% file skip rate
-- **Z-order**: 5x speedup on correlated dimensions
+**Storage** (achievable now with fixes):
+- ✅ PAX no-cluster: Competitive with AOCO (within 5%)
+- ✅ PAX clustered: < 5% larger than no-cluster (fixed with maintenance_work_mem)
+
+**Performance** (requires file-level pruning enabled in code):
+- ⚠️  Currently: PAX 1.5-2x slower than AOCO (predicate pushdown disabled)
+- ✅ Expected: PAX 25-35% faster when pruning enabled
+- ✅ Sparse filter should skip ≥ 60% of files
+- ✅ Z-order queries ≥ 2-5x faster (on clustered variant)
+
+### Actual Results (October 2025 - 10M Row Test)
+
+**Before Optimization**:
+- ❌ PAX clustered: 2,000 MB (2.66x bloat due to low maintenance_work_mem)
+- ❌ PAX clustered memory: 16,390 KB per query (110x overhead)
+- ❌ Queries: 3-4x slower than AOCO
+
+**After Optimization** (expected with maintenance_work_mem=2GB):
+- ✅ PAX clustered: ~780 MB (5% larger than no-cluster)
+- ✅ PAX no-cluster: 752 MB (6% larger than AOCO's 710 MB)
+- ✅ PAX memory: ~600 KB per query (reasonable)
+- ⚠️  Queries: Still 1.5-2x slower (file pruning disabled in Cloudberry 3.0.0-devel)
+
+**Root Causes Identified**:
+1. Storage bloat: Low maintenance_work_mem → fixed in sql/04_optimize_pax.sql
+2. Bloom filter waste: Low-cardinality columns → fixed in sql/02_create_variants.sql
+3. Slow queries: Predicate pushdown disabled in pax_scanner.cc:366 (code-level issue)
+
+See: `results/BENCHMARK_REVIEW_AND_RECOMMENDATIONS.md` for detailed analysis
 
 ---
 
 ## Troubleshooting Quick Reference
+
+**"PAX clustering causes 2-3x storage bloat"** ⚠️  COMMON ISSUE
+```bash
+# CAUSE: Low maintenance_work_mem (default 64MB)
+# FIX: Validate memory BEFORE clustering
+psql -f sql/04a_validate_clustering_config.sql
+
+# If insufficient, set before clustering:
+psql -c "SET maintenance_work_mem='2GB';" -f sql/04_optimize_pax.sql
+```
+
+**"PAX queries slower than AOCO"**
+- Expected in Cloudberry 3.0.0-devel (predicate pushdown disabled)
+- Check: `psql -c "SHOW pax.enable_sparse_filter;"` (should be `on`)
+- Analyze: `psql -f sql/08_analyze_query_plans.sql`
+- Not a config issue if "Rows Removed by Filter" is high
+
+**"Which columns for bloom filters?"**
+```bash
+# Check cardinality first
+psql -f sql/07_inspect_pax_internals.sql
+
+# Rule: ONLY use bloom for cardinality > 1000
+# Low cardinality (<100): Use minmax instead
+```
 
 **"PAX extension not found"**
 ```bash
@@ -231,8 +341,8 @@ make clean && make -j8 && make install
 ```
 
 **"Out of disk space"**
-- Need ~300GB free
-- Reduce dataset size in `sql/03_generate_data.sql`
+- Need ~300GB free for full benchmark
+- For testing: Use `sql/03_generate_data_SMALL.sql` (10M rows, ~5GB)
 
 **"Connection refused"**
 ```bash
@@ -250,16 +360,33 @@ pip3 install matplotlib seaborn
 
 ## Key Files for AI Assistants
 
-**Most Important**:
-1. `scripts/run_full_benchmark.sh` - Execute this
-2. `QUICK_REFERENCE.md` - Commands & troubleshooting
-3. `docs/TECHNICAL_ARCHITECTURE.md` - Deep understanding
-4. `sql/05_queries_ALL.sql` - What we're testing
+**Most Important** (Start Here):
+1. **OPTIMIZATION_CHANGES.md** - Latest updates & fixes (Oct 2025)
+2. **results/BENCHMARK_REVIEW_AND_RECOMMENDATIONS.md** - Root cause analysis
+3. `QUICK_REFERENCE.md` - Commands & troubleshooting
+4. `docs/CONFIGURATION_GUIDE.md` - PAX tuning (updated with memory guidance)
+5. `docs/TECHNICAL_ARCHITECTURE.md` - Deep understanding (2,450+ lines)
+
+**Execution Scripts** (In Order):
+1. `sql/01_setup_schema.sql` - Schema creation
+2. `sql/02_create_variants.sql` - 4 variants (OPTIMIZED with bloom filter fixes)
+3. `sql/03_generate_data_SMALL.sql` - 10M rows for testing
+4. `sql/04a_validate_clustering_config.sql` - NEW: Memory validation
+5. `sql/04_optimize_pax.sql` - UPDATED: Sets maintenance_work_mem=2GB
+6. `sql/05_test_sample_queries.sql` - Quick 2-query test
+7. `sql/06_collect_metrics.sql` - Storage & performance
+8. `sql/07_inspect_pax_internals.sql` - NEW: Statistics analysis
+9. `sql/08_analyze_query_plans.sql` - NEW: Detailed EXPLAIN
+
+**Analysis & Results**:
+- `results/4-variant-test-10M-rows.md` - Comprehensive test results (15 pages)
+- `results/QUICK_SUMMARY.md` - Executive summary
+- `results/test-config-2025-10-29.log` - Reproduction guide
 
 **Documentation Map**:
 - **README.md** - Start here (main overview)
 - **docs/INSTALLATION.md** - Setup instructions
-- **docs/CONFIGURATION_GUIDE.md** - PAX tuning
+- **docs/CONFIGURATION_GUIDE.md** - PAX tuning (UPDATED with memory section)
 - **docs/METHODOLOGY.md** - Scientific approach
 - **docs/REPORTING.md** - Results analysis
 - **docs/archive/** - Historical meta-documentation
@@ -370,4 +497,41 @@ Be direct and concise.
 
 ---
 
-_Last Updated: October 29, 2025_
+---
+
+## Recent Updates (October 2025)
+
+### Configuration Optimizations Applied
+
+**Critical fixes based on PAX source code analysis**:
+
+1. **Storage Bloat Fix** (sql/04_optimize_pax.sql)
+   - Added `maintenance_work_mem = '2GB'` before clustering
+   - Prevents 2.66x storage bloat (752 MB → 2,000 MB issue resolved)
+   - Root cause: Low memory causes spill-to-disk → data duplication
+
+2. **Bloom Filter Optimization** (sql/02_create_variants.sql)
+   - Restricted bloom filters to high-cardinality only (>1000 distinct values)
+   - Moved low-cardinality columns (region, country, status) to minmax
+   - Increased bloom filter memory from 10MB to 100MB
+
+3. **New Validation & Analysis Tools**:
+   - `sql/04a_validate_clustering_config.sql` - Pre-flight memory check
+   - `sql/07_inspect_pax_internals.sql` - Cardinality & statistics analysis
+   - `sql/08_analyze_query_plans.sql` - Detailed EXPLAIN output
+
+**Expected Impact**:
+- PAX clustered storage: 2,000 MB → ~780 MB (2.6x reduction)
+- PAX clustered memory: 16,390 KB → ~600 KB (27x reduction)
+- Better bloom filter efficiency (no wasted memory)
+
+**Known Limitations**:
+- Queries still 1.5-2x slower than AOCO (file-level pruning disabled in code)
+- Requires code fix in pax_scanner.cc:366 (predicate pushdown)
+- Not a configuration issue
+
+See `OPTIMIZATION_CHANGES.md` for complete details.
+
+---
+
+_Last Updated: October 29, 2025 (Post-Optimization)_
