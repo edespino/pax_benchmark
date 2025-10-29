@@ -54,25 +54,36 @@ cat results/run_*/BENCHMARK_REPORT.md
 -- Create optimized PAX table
 CREATE TABLE my_table (...) USING pax WITH (
     compresstype='zstd', compresslevel=5,
-    minmax_columns='date,id,amount',           -- 4-6 columns
-    bloomfilter_columns='category,region',     -- 4-6 columns
+
+    -- MinMax: Use for ALL filterable columns (low overhead)
+    minmax_columns='date,id,amount,region,status',  -- 6-12 recommended
+
+    -- Bloom: ONLY high-cardinality (>1000 distinct) columns
+    bloomfilter_columns='transaction_id,customer_id',  -- 2-4 high-card only
+
     cluster_type='zorder',
-    cluster_columns='date,region',              -- 2-3 columns
+    cluster_columns='date,region',              -- 2-3 correlated columns
     storage_format='porc'
 );
 
--- Per-column encoding
+-- Per-column encoding (if supported in your PAX version)
 ALTER TABLE my_table
     ALTER COLUMN id SET ENCODING (compresstype=delta),
     ALTER COLUMN status SET ENCODING (compresstype=RLE_TYPE);
 
+-- CRITICAL: Set memory BEFORE clustering (prevents 2-3x storage bloat)
+SET maintenance_work_mem = '2GB';   -- For 10M rows
+SET maintenance_work_mem = '8GB';   -- For 200M rows
+
 -- Cluster data
 CLUSTER my_table;
 
--- Optimal GUCs
+-- Optimal GUCs for queries
 SET pax.enable_sparse_filter = on;
 SET pax.enable_row_filter = off;  -- For OLAP
-SET pax.max_size_per_file = 67108864;  -- 64MB
+SET pax.max_tuples_per_file = 1310720;  -- Default: 1.31M tuples
+SET pax.max_size_per_file = 67108864;   -- Default: 64MB
+SET pax.bloom_filter_work_memory_bytes = 104857600;  -- 100MB for high-cardinality
 ```
 
 ---
@@ -195,6 +206,8 @@ FROM generate_series(1, 10000000) gs;  -- 100K, 1M, 10M, 50M...
 ```
 
 ### Expected Results (10M rows)
+
+**With OLD Configuration** (before optimization):
 | Variant | Storage | Speed vs AOCO | Memory |
 |---------|---------|---------------|--------|
 | **AO** | 1,128 MB | 3.5x slower | 345 KB |
@@ -202,7 +215,17 @@ FROM generate_series(1, 10000000) gs;  -- 100K, 1M, 10M, 50M...
 | **PAX (clustered)** | 2,000 MB ❌ | 1.3x slower | 16,390 KB ❌ |
 | **PAX (no-cluster)** | 752 MB ✅ | 2.0x slower | 149 KB ✅ |
 
-**Key Finding**: Clustering causes 2.66x storage bloat (752 MB → 2,000 MB)
+**Root Cause**: Low maintenance_work_mem (64MB) → clustering spills → 2.66x bloat
+
+**With OPTIMIZED Configuration** (updated sql/04_optimize_pax.sql):
+| Variant | Storage | Speed vs AOCO | Memory |
+|---------|---------|---------------|--------|
+| **AO** | 1,128 MB | 3.5x slower | 345 KB |
+| **AOCO** | 710 MB | Baseline | 538 KB |
+| **PAX (clustered)** | ~780 MB ✅ | 1.5-2x slower ⚠️ | ~600 KB ✅ |
+| **PAX (no-cluster)** | 752 MB ✅ | 2.0x slower ⚠️ | 149 KB ✅ |
+
+**Note**: Queries still 1.5-2x slower due to file-level pruning disabled in code
 
 ### Capture Test Configuration
 ```bash
@@ -238,25 +261,40 @@ cat results/test-config-2025-10-29.log
 
 ## 💡 Pro Tips
 
-1. **Enable debug** to see sparse filtering in action:
+1. **Validate memory BEFORE clustering** (prevents storage bloat):
+   ```bash
+   psql -f sql/04a_validate_clustering_config.sql
+   ```
+
+2. **Enable debug** to see sparse filtering in action:
    ```sql
    SET pax.enable_debug = on;
    SET client_min_messages = LOG;
    ```
 
-2. **Check clustering status**:
+3. **Check clustering status** (if introspection functions available):
    ```sql
    SELECT ptisclustered, COUNT(*)
    FROM get_pax_aux_table('my_table')
    GROUP BY ptisclustered;
    ```
 
-3. **Monitor progress** during data generation:
+4. **Inspect PAX internals** (statistics, cardinality):
+   ```bash
+   psql -f sql/07_inspect_pax_internals.sql
+   ```
+
+5. **Analyze query plans** (detailed EXPLAIN output):
+   ```bash
+   psql -f sql/08_analyze_query_plans.sql
+   ```
+
+6. **Monitor progress** during data generation:
    ```bash
    watch "psql -c \"SELECT COUNT(*) FROM benchmark.sales_fact_pax\""
    ```
 
-4. **Quick size check**:
+7. **Quick size check**:
    ```sql
    SELECT
      'PAX' AS variant,

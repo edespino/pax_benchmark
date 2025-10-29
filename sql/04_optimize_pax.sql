@@ -35,9 +35,13 @@ SET pax.max_size_per_file = 67108864;     -- 64MB files
 SET pax.max_tuples_per_group = 131072;    -- 128K tuples/group
 \echo '  ✓ Max tuples per group: 131,072'
 
--- Bloom filter memory
-SET pax.bloom_filter_work_memory_bytes = 10485760;  -- 10MB
-\echo '  ✓ Bloom filter work memory: 10MB'
+-- Bloom filter memory (scaled for high-cardinality columns)
+-- Calculation: For high-cardinality columns (customer_id, product_id, transaction_hash)
+-- Optimal bloom filter bits = rows × 10 bits/row (1% false positive rate)
+-- 10M rows × 10 bits = 100M bits = 12.5 MB per file
+-- With ~8 files: 12.5 MB × 8 = 100 MB total
+SET pax.bloom_filter_work_memory_bytes = 104857600;  -- 100MB (increased from 10MB)
+\echo '  ✓ Bloom filter work memory: 100MB (optimized for high-cardinality columns)'
 
 \echo ''
 \echo 'GUC configuration complete'
@@ -64,6 +68,31 @@ SELECT
 \echo ''
 
 -- =============================================
+-- Configure Memory for Clustering (CRITICAL)
+-- =============================================
+
+\echo 'Configuring memory for Z-order clustering...'
+\echo ''
+
+-- CRITICAL: Set maintenance_work_mem to prevent storage bloat
+-- Formula: (rows × bytes_per_row × 2) / 1MB
+-- For 10M rows:   (10M × 600 × 2) / 1MB = ~12 GB ideal
+-- For 200M rows:  (200M × 600 × 2) / 1MB = ~240 GB ideal
+--
+-- Safe minimum: 2GB for 10M rows, 8GB for 200M rows
+-- If too low: CLUSTER spills to disk → creates duplicate data → 2-3x bloat
+--
+-- Background: Z-order clustering loads entire dataset into memory for sorting
+-- The bit-interleaving algorithm requires random access to all rows
+-- Insufficient memory causes inefficient merge operations and data duplication
+
+SET maintenance_work_mem = '2GB';
+\echo '  ✓ maintenance_work_mem: 2GB (for 10M rows)'
+\echo '  ℹ For 200M rows, increase to 8GB or higher'
+
+\echo ''
+
+-- =============================================
 -- Execute Z-Order Clustering
 -- Clusters on (sale_date, region) for correlated access
 -- =============================================
@@ -71,6 +100,9 @@ SELECT
 \echo 'Executing Z-order clustering on (sale_date, region)...'
 \echo 'This will reorganize data for optimal multi-dimensional query performance'
 \echo 'Estimated time: 10-20 minutes'
+\echo ''
+\echo 'Memory allocation: 2GB (maintenance_work_mem)'
+\echo 'Expected storage change: < 5% increase'
 \echo ''
 
 CLUSTER benchmark.sales_fact_pax;

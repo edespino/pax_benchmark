@@ -30,16 +30,23 @@ CREATE TABLE optimized_fact_table (...) USING pax WITH (
     compresstype='zstd',
     compresslevel=5,  -- Balance speed/ratio (1-19)
 
-    -- Statistics for sparse filtering
-    -- Choose 4-6 columns that are frequently used in WHERE clauses
-    minmax_columns='date_col,amount_col,id_col,timestamp_col',
+    -- MinMax Statistics (LOW OVERHEAD - use liberally)
+    -- ✅ Works for: Range queries (<, >, BETWEEN), equality (=), IS NULL
+    -- ✅ Recommended: 6-12 columns that appear in WHERE clauses
+    -- ✅ Low overhead: ~32 bytes per file per column
+    minmax_columns='date_col,amount_col,id_col,timestamp_col,region,status',
 
-    -- Bloom filters for high-cardinality equality/IN predicates
-    -- Choose categorical columns with many distinct values
-    bloomfilter_columns='category,region,status,transaction_id',
+    -- Bloom Filters (HIGH OVERHEAD - use selectively)
+    -- ⚠️  ONLY for high-cardinality columns (>1000 distinct values)
+    -- ✅ Works for: Equality (=) and IN queries
+    -- ❌ Don't use for: Low cardinality (<100 values) - wastes memory
+    -- Recommendation: 2-4 high-cardinality columns max
+    -- Examples: transaction_id (unique), customer_id (millions), product_id (100K+)
+    bloomfilter_columns='transaction_id,customer_id,product_id',
 
     -- Z-order clustering for correlated dimensions
     -- Choose 2-3 columns that are frequently filtered together
+    -- Best for: Columns with natural correlation (date+region, lat+lon)
     cluster_type='zorder',  -- or 'lexical' for simple ORDER BY
     cluster_columns='date_col,region',
 
@@ -48,6 +55,31 @@ CREATE TABLE optimized_fact_table (...) USING pax WITH (
 )
 DISTRIBUTED BY (id_col);
 ```
+
+**Key Configuration Principles**:
+
+1. **MinMax vs Bloom Decision Tree**:
+   ```
+   Column in WHERE clause?
+   ├─ YES → Add to minmax_columns (always)
+   │   └─ High cardinality (>1000)?
+   │       ├─ YES → Add to bloomfilter_columns (if using IN/equality)
+   │       └─ NO  → Skip bloom filter (minmax sufficient)
+   └─ NO  → Skip both
+   ```
+
+2. **Cardinality Analysis** (run before configuring):
+   ```sql
+   SELECT attname, n_distinct
+   FROM pg_stats
+   WHERE tablename = 'your_table'
+   ORDER BY n_distinct DESC;
+   ```
+
+3. **Clustering Column Selection**:
+   - Choose columns with **query correlation** (date+region often queried together)
+   - Avoid columns with **update patterns** (clustering is expensive to maintain)
+   - Prefer **low-cardinality leading column** for Z-order efficiency
 
 ---
 
@@ -91,24 +123,57 @@ ALTER TABLE mixed_encoding
 
 ## GUC Parameter Tuning
 
-### OLAP Workload (Recommended)
+### Memory Configuration (CRITICAL FOR CLUSTERING)
+
+```sql
+-- ⚠️  CRITICAL: Set maintenance_work_mem BEFORE clustering
+-- If too low: Clustering spills to disk → 2-3x storage bloat
+-- Formula: (rows × bytes_per_row × 2) / 1MB
+
+-- For 10M rows (~600 bytes/row):
+SET maintenance_work_mem = '2GB';    -- Minimum safe value
+
+-- For 50M rows:
+SET maintenance_work_mem = '8GB';    -- Recommended
+
+-- For 200M rows:
+SET maintenance_work_mem = '32GB';   -- Ideal (may need adjustment)
+
+-- Background: Z-order clustering loads entire dataset into memory
+-- Insufficient memory causes inefficient spill-to-disk operations
+-- This creates duplicate data during merge and prevents cleanup
+```
+
+**Validation Before Clustering**:
+```bash
+# Check if memory is sufficient (prevents bloat)
+psql -f sql/04a_validate_clustering_config.sql
+```
+
+### OLAP Workload (Query Performance)
 
 ```sql
 -- Enable sparse filtering (file pruning)
 SET pax.enable_sparse_filter = on;
 
--- Disable row filtering (not needed for pure OLAP)
+-- Disable row filtering (not needed for pure OLAP column access)
 SET pax.enable_row_filter = off;
 
--- Optimize micro-partition sizing
-SET pax.max_tuples_per_file = 1310720;    -- ~1.3M tuples
-SET pax.max_size_per_file = 67108864;     -- 64MB
-SET pax.max_tuples_per_group = 131072;    -- 128K tuples
+-- Optimize micro-partition sizing (defaults are good)
+SET pax.max_tuples_per_file = 1310720;    -- ~1.3M tuples (default)
+SET pax.max_size_per_file = 67108864;     -- 64MB (default)
+SET pax.max_tuples_per_group = 131072;    -- 128K tuples (default)
 
--- Bloom filter memory
-SET pax.bloom_filter_work_memory_bytes = 10485760;  -- 10MB
+-- Bloom filter memory (scale with cardinality)
+-- Default: 10KB (sufficient for low-cardinality)
+-- High-cardinality: Scale up based on distinct values
+SET pax.bloom_filter_work_memory_bytes = 104857600;  -- 100MB for high-card
 
--- Buffer for scans
+-- Calculation: rows × 10 bits/row / 8 = bytes
+-- Example: 10M rows × 10 bits / 8 = 12.5 MB per file
+--          8 files × 12.5 MB = 100 MB total
+
+-- Buffer for scans (default is good)
 SET pax.scan_reuse_buffer_size = 8388608;  -- 8MB
 
 -- Enable TOAST for large values
