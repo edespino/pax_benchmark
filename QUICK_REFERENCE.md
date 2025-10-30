@@ -4,12 +4,30 @@
 
 ---
 
-## ⚡ Quick Start (3 Commands)
+## ⚡ Quick Start
 
+### Fast Benchmarks (2-6 minutes)
 ```bash
-cd /Users/eespino/workspace/edespino/pax_benchmark
+cd /home/cbadmin/bom-parts/pax_benchmark
 
-# 1. Run full benchmark (2-4 hours)
+# IoT time-series (10M sensor readings, 2-5 min)
+cd benchmarks/timeseries_iot && ./scripts/run_iot_benchmark.sh
+
+# Financial trading (10M ticks, 4-8 min, high-cardinality)
+cd benchmarks/financial_trading && ./scripts/run_trading_benchmark.sh
+
+# Log analytics (10M logs, 3-6 min, sparse columns / APM)
+cd benchmarks/log_analytics && ./scripts/run_log_benchmark.sh
+
+# View results
+cat results/run_*/09_validation.txt
+```
+
+### Comprehensive Benchmark (2-4 hours)
+```bash
+cd benchmarks/retail_sales
+
+# 1. Run full benchmark (200M rows, 2-4 hours)
 ./scripts/run_full_benchmark.sh
 
 # 2. Generate charts (optional - requires matplotlib)
@@ -19,7 +37,7 @@ python3 scripts/generate_charts.py results/run_*/
 cat results/run_*/BENCHMARK_REPORT.md
 ```
 
-**Fast Alternative**: For small-scale testing (10M rows, 2-3 minutes, 4 variants including PAX no-cluster control), see the [Small-Scale Testing](#-small-scale-testing-4-variant-approach) section below.
+**See `benchmarks/README.md`** for detailed comparison and workload selection guide.
 
 ---
 
@@ -28,23 +46,33 @@ cat results/run_*/BENCHMARK_REPORT.md
 | Need | File |
 |------|------|
 | **Quick start** | `README.md` |
+| **Choose benchmark** | `benchmarks/README.md` |
 | **Installation** | `docs/INSTALLATION.md` |
-| **Run benchmark** | `scripts/run_full_benchmark.sh` |
+| **Run fast benchmark** | `benchmarks/{iot\|trading\|logs}/scripts/run_*.sh` |
+| **Run comprehensive** | `benchmarks/retail_sales/scripts/run_full_benchmark.sh` |
 | **Analyze results** | `docs/REPORTING.md` |
 | **Technical details** | `docs/TECHNICAL_ARCHITECTURE.md` |
 | **Configuration tips** | `docs/CONFIGURATION_GUIDE.md` |
-| **Phase-by-phase** | `sql/01_*.sql` through `sql/06_*.sql` |
+| **Phase-by-phase** | `benchmarks/{name}/sql/*.sql` (9 phases) |
 
 ---
 
 ## 🎯 Expected Results Cheat Sheet
 
+### Retail Sales (200M rows)
 | Metric | Target | Location |
 |--------|--------|----------|
-| **Storage reduction** | -34% | `sql/06_collect_metrics.sql` |
+| **Storage reduction** | -34% | `benchmarks/retail_sales/sql/06_collect_metrics.sql` |
 | **Query speedup** | -32% | `results/*/comparison_table.md` |
 | **File skip rate** | 88% | Check PAX logs (enable debug) |
 | **Z-order speedup** | 5x | Category C queries (Q7-Q9) |
+
+### Fast Benchmarks (10M rows)
+| Benchmark | Key Result | Location |
+|-----------|------------|----------|
+| **IoT** | Time-series filtering | `benchmarks/timeseries_iot/results/run_*/09_validation.txt` |
+| **Trading** | High-cardinality bloom | `benchmarks/financial_trading/results/run_*/09_validation.txt` |
+| **Logs** | Sparse columns (95% NULL) | `benchmarks/log_analytics/results/run_*/09_validation.txt` |
 
 ---
 
@@ -144,19 +172,24 @@ ls -lh visuals/charts/*.png
 ## 📖 Documentation Quick Links
 
 - **README.md** - Start here
+- **benchmarks/README.md** - Benchmark selection guide
 - **QUICK_REFERENCE.md** - This file
 - **docs/INSTALLATION.md** - Setup instructions
 - **docs/REPORTING.md** - Results analysis
 - **docs/TECHNICAL_ARCHITECTURE.md** - Deep dive (2,450 lines)
 - **docs/METHODOLOGY.md** - How to reproduce
 - **docs/CONFIGURATION_GUIDE.md** - How to tune PAX
+- **PAX_BENCHMARK_SUITE_PLAN.md** - Implementation roadmap
 - **docs/archive/** - Historical documentation
 
 ---
 
 ## 🚀 Manual Phase-by-Phase Execution
 
+### Retail Sales (Comprehensive)
 ```bash
+cd benchmarks/retail_sales
+
 psql -f sql/01_setup_schema.sql       # 5-10 min
 psql -f sql/02_create_variants.sql    # 2 min
 psql -f sql/03_generate_data.sql      # 30-60 min ⏰
@@ -167,6 +200,23 @@ psql -f sql/04_optimize_pax.sql       # 10-20 min ⏰
 # sed 's/TABLE_VARIANT/sales_fact_pax/g' sql/05_queries_ALL.sql | psql
 
 psql -f sql/06_collect_metrics.sql    # 5 min
+```
+
+### Fast Benchmarks (IoT / Trading / Logs)
+```bash
+cd benchmarks/{timeseries_iot|financial_trading|log_analytics}
+
+# All phases (automated via run_*.sh)
+psql -f sql/00_validation_framework.sql  # 1-2 min
+psql -f sql/01_setup_schema.sql          # 30 sec
+psql -f sql/02_analyze_cardinality.sql   # 30 sec (1M sample)
+psql -f sql/03_generate_config.sql       # 10 sec
+psql -f sql/04_create_variants.sql       # 1 min
+psql -f sql/05_generate_data.sql         # 1-2 min (10M rows)
+psql -f sql/06_optimize_pax.sql          # 1-2 min
+psql -f sql/07_run_queries.sql           # 30 sec
+psql -f sql/08_collect_metrics.sql       # 30 sec
+psql -f sql/09_validate_results.sql      # 30 sec
 ```
 
 ---

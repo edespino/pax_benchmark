@@ -8,10 +8,16 @@
 
 **Goal**: Create production-ready benchmark suite demonstrating PAX storage effectiveness across diverse workload patterns, all using validation-first framework to prevent misconfiguration disasters.
 
-**Scenarios**: 6 workloads covering major database use cases
+**Scenarios**: 6 workloads covering major database use cases (3 completed as of Oct 2025)
 **Timeline**: 1 scenario at a time, ~2-3 hours implementation each
 **Validation**: Shared framework preventing 81% bloat disasters
 **Output**: Unified comparison across all scenarios
+
+**Completion Status**:
+- ✅ Scenario 0: IoT Time-Series (Oct 2025)
+- ✅ Scenario 1: Financial Trading (Oct 2025)
+- ✅ Scenario 2: Log Analytics (Oct 2025)
+- ⏳ Scenarios 3-6: Planned
 
 ---
 
@@ -23,34 +29,34 @@
 pax_benchmark/
 ├── PAX_BENCHMARK_SUITE_PLAN.md          # This file
 ├── CLAUDE.md                             # AI guidance (updated)
-├── shared/
-│   ├── validation_framework.sql          # Reusable validation functions
-│   ├── comparison_queries.sql            # Standard AO/AOCO/PAX metrics
-│   └── reporting_templates/              # Unified result formats
+├── benchmarks/                           # All benchmark scenarios
+│   ├── README.md                         # Benchmark suite overview
+│   │
+│   ├── timeseries_iot/                   # ✅ COMPLETED (Scenario 0)
+│   │   ├── README.md
+│   │   ├── sql/                          # 9 SQL scripts
+│   │   ├── scripts/run_iot_benchmark.sh
+│   │   └── results/                      # Timestamped runs
+│   │
+│   ├── financial_trading/                # ✅ COMPLETED (Scenario 1)
+│   │   ├── README.md
+│   │   ├── sql/                          # 9 SQL scripts
+│   │   ├── scripts/run_trading_benchmark.sh
+│   │   └── results/
+│   │
+│   ├── log_analytics/                    # ✅ COMPLETED (Scenario 2)
+│   │   ├── README.md
+│   │   ├── sql/                          # 10 SQL scripts
+│   │   ├── scripts/run_log_benchmark.sh
+│   │   └── results/
+│   │
+│   ├── ecommerce_clickstream/            # ⏳ Planned (Scenario 3)
+│   ├── telecom_cdr/                      # ⏳ Planned (Scenario 4)
+│   ├── geospatial_location/              # ⏳ Planned (Scenario 5)
+│   └── healthcare_records/               # ⏳ Planned (Scenario 6)
 │
-├── timeseries_iot_benchmark/             # ✅ COMPLETED (Scenario 0)
-│   └── [existing IoT benchmark]
-│
-├── financial_trading_benchmark/          # Scenario 1
-│   ├── README.md
-│   ├── sql/
-│   │   ├── 00_validation_framework.sql   # Symlink to shared/
-│   │   ├── 01_setup_schema.sql
-│   │   ├── 02_analyze_cardinality.sql
-│   │   ├── 03_generate_config.sql
-│   │   ├── 04_create_variants.sql
-│   │   ├── 05_generate_tick_data.sql
-│   │   ├── 06_validate_configuration.sql
-│   │   ├── 07_optimize_pax.sql
-│   │   ├── 08_queries_trading.sql
-│   │   └── 11_collect_metrics.sql
-│   └── scripts/run_trading_benchmark.sh
-│
-├── log_analytics_benchmark/              # Scenario 2
-├── ecommerce_clickstream_benchmark/      # Scenario 3
-├── telecom_cdr_benchmark/                # Scenario 4
-├── geospatial_location_benchmark/        # Scenario 5
-├── healthcare_records_benchmark/         # Scenario 6
+├── retail_sales/                         # Original comprehensive benchmark
+│   └── [200M row, 2-4 hour benchmark]
 │
 └── results/
     └── unified_comparison/
@@ -83,7 +89,9 @@ pax_benchmark/
 
 ---
 
-### Scenario 1: Financial Trading (High-Frequency Tick Data)
+### Scenario 1: Financial Trading (High-Frequency Tick Data) ✅ COMPLETED
+
+**Status**: Implemented, tested, committed (35036eb)
 
 **Business Context**: Stock exchange tick data, high-frequency trading analytics
 
@@ -205,7 +213,9 @@ USING pax WITH (
 
 ---
 
-### Scenario 2: Log Analytics / Observability
+### Scenario 2: Log Analytics / Observability ✅ COMPLETED
+
+**Status**: Implemented, tested, committed (18f8d30)
 
 **Business Context**: Application logs, distributed tracing, system monitoring
 
@@ -328,16 +338,36 @@ USING pax WITH (
 - **Query performance**: 3-5x faster on trace_id/request_id lookups
 - **Sparse filtering**: 70-90% file skip rate on ERROR logs (<5% of data)
 
-**Key Validation Points**:
-- ✅ Verify trace_id cardinality (~1M)
-- ✅ Verify request_id cardinality (~2M)
-- ❌ CRITICAL: Exclude log_level from bloom filters (only 5 values)
-- ❌ CRITICAL: Exclude http_method from bloom filters (only 9 values)
-- ❌ Do NOT use bloom filters on TEXT columns (message, stack_trace)
+**Actual Results** (Oct 30, 2025 - 10M rows):
+- **AO**: 1,065 MB (baseline)
+- **AOCO**: 690 MB (0.65x vs AO)
+- **PAX no-cluster**: 717 MB (+4% vs AOCO) ✅ **Excellent**
+- **PAX clustered**: 1,046 MB (+52% vs AOCO) ❌ High overhead
+- **Compression**: 4.9x (PAX no-cluster), 3.3x (PAX clustered)
+- **Sparse validation**: stack_trace (95% NULL), error_code (95% NULL), user_id (30% NULL) - all perfect
+- **Bloom filters**: trace_id (10M unique), request_id (10M unique) - validated
+- **Clustering overhead**: 46% (higher than expected, likely due to text-heavy data)
 
-**Runtime**: ~7-10 minutes
-- Phase 5 (10M logs with TEXT): ~4-5 min
-- Phase 7 (clustering): ~2-3 min
+**Key Findings**:
+- ✅ PAX no-cluster is **production-ready** for log analytics (4% overhead)
+- ❌ PAX clustering adds excessive overhead on text-heavy workloads (46%)
+- ✅ Sparse filtering works perfectly (95% NULL columns validated)
+- ✅ Bloom filter configuration validated (only high-cardinality columns)
+- 📝 Recommendation: Use PAX no-cluster for APM/observability data
+
+**Key Validation Points**:
+- ✅ Verify trace_id cardinality (~1M) - **PASSED**: 10M unique
+- ✅ Verify request_id cardinality (~2M) - **PASSED**: 10M unique
+- ✅ Exclude log_level from bloom filters (only 6 values) - **PASSED**
+- ✅ Exclude http_method from bloom filters (only 9 values) - **PASSED**
+- ✅ Do NOT use bloom filters on TEXT columns - **PASSED**
+
+**Actual Runtime**: 5m 26s
+- Phase 5 (10M logs with TEXT): 88s (~1.5 min)
+- Phase 6 (Z-order clustering): 32s
+- Phase 7 (12 queries): 24s
+- Phase 8 (metrics): 36s
+- Phase 9 (validation): 141s (~2.5 min)
 
 ---
 

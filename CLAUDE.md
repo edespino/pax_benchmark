@@ -83,10 +83,16 @@ pax_benchmark/
 │   │   ├── sql/ (9 files with validation framework)
 │   │   └── results/
 │   │
-│   └── financial_trading/       # Trading tick benchmark (10M rows, 4-8 min)
+│   ├── financial_trading/       # Trading tick benchmark (10M rows, 4-8 min)
+│   │   ├── README.md
+│   │   ├── scripts/run_trading_benchmark.sh
+│   │   ├── sql/ (9 files with validation framework)
+│   │   └── results/
+│   │
+│   └── log_analytics/           # APM/observability logs (10M rows, 3-6 min)
 │       ├── README.md
-│       ├── scripts/run_trading_benchmark.sh
-│       ├── sql/ (9 files with validation framework)
+│       ├── scripts/run_log_benchmark.sh
+│       ├── sql/ (10 files with validation framework)
 │       └── results/
 │
 ├── docs/
@@ -117,6 +123,12 @@ cd benchmarks/timeseries_iot
 ```bash
 cd benchmarks/financial_trading
 ./scripts/run_trading_benchmark.sh
+```
+
+**Sparse column testing / APM data** (3-6 min):
+```bash
+cd benchmarks/log_analytics
+./scripts/run_log_benchmark.sh
 ```
 
 **Comprehensive validation** (2-4 hours):
@@ -852,6 +864,7 @@ FROM generate_series(1, 500000000) gs  -- 500M rows
 - "Run a quick test" → `cd benchmarks/timeseries_iot && ./scripts/run_iot_benchmark.sh` (2-5 min)
 - "Run comprehensive test" → `cd benchmarks/retail_sales && ./scripts/run_full_benchmark.sh` (2-4 hrs)
 - "Test high-cardinality" → `cd benchmarks/financial_trading && ./scripts/run_trading_benchmark.sh` (4-8 min)
+- "Test sparse columns / APM logs" → `cd benchmarks/log_analytics && ./scripts/run_log_benchmark.sh` (3-6 min)
 - "Understand PAX" → Read `docs/TECHNICAL_ARCHITECTURE.md`
 - "Configure PAX" → Read `docs/CONFIGURATION_GUIDE.md` + `benchmarks/README.md`
 - "Interpret results" → Read `docs/REPORTING.md`

@@ -1,8 +1,8 @@
 # PAX Storage Performance Benchmark Suite
 
-Comprehensive benchmark demonstrating PAX storage superiority over AO/AOCO in Apache Cloudberry.
+Comprehensive benchmark suite demonstrating PAX storage advantages over AO/AOCO in Apache Cloudberry across multiple workload types.
 
-**Key Results**: 34% smaller storage, 32% faster queries, 88% file skip rate
+**Four specialized benchmarks** testing sparse columns, high-cardinality filtering, time-series, and retail analytics.
 
 ---
 
@@ -11,15 +11,29 @@ Comprehensive benchmark demonstrating PAX storage superiority over AO/AOCO in Ap
 ### Prerequisites
 - Apache Cloudberry built with `--enable-pax`
 - 3+ segment cluster (or demo cluster)
-- 300GB free disk space
+- Disk space varies by benchmark (see below)
 
-### Execute Benchmark
+### Choose Your Benchmark
+
+**Fast iteration / Testing** (2-6 minutes):
 ```bash
-./scripts/run_full_benchmark.sh
+# IoT time-series (10M rows, 2-5 min)
+cd benchmarks/timeseries_iot && ./scripts/run_iot_benchmark.sh
+
+# Financial trading (10M rows, 4-8 min)
+cd benchmarks/financial_trading && ./scripts/run_trading_benchmark.sh
+
+# Log analytics / Sparse columns (10M rows, 3-6 min)
+cd benchmarks/log_analytics && ./scripts/run_log_benchmark.sh
 ```
 
-**Runtime**: 2-4 hours
-**Output**: `results/run_YYYYMMDD_HHMMSS/`
+**Comprehensive validation** (2-4 hours):
+```bash
+# Retail sales (200M rows, 2-4 hrs, 300GB disk)
+cd benchmarks/retail_sales && ./scripts/run_full_benchmark.sh
+```
+
+**Output**: Results in `benchmarks/{benchmark_name}/results/run_YYYYMMDD_HHMMSS/`
 
 ---
 
@@ -31,65 +45,97 @@ pax_benchmark/
 ├── QUICK_REFERENCE.md           # One-page command cheat sheet
 ├── CLAUDE.md                    # AI assistant instructions
 │
+├── benchmarks/                  # Benchmark suite (4 workload types)
+│   ├── README.md                # Benchmark comparison guide
+│   │
+│   ├── retail_sales/            # Comprehensive (200M rows, 2-4 hrs)
+│   │   ├── README.md
+│   │   ├── scripts/run_full_benchmark.sh
+│   │   ├── sql/                 # 9 phases with validation
+│   │   └── results/
+│   │
+│   ├── timeseries_iot/          # Fast iteration (10M rows, 2-5 min)
+│   │   ├── README.md
+│   │   ├── scripts/run_iot_benchmark.sh
+│   │   ├── sql/                 # 9 phases with validation
+│   │   └── results/
+│   │
+│   ├── financial_trading/       # High-cardinality (10M rows, 4-8 min)
+│   │   ├── README.md
+│   │   ├── scripts/run_trading_benchmark.sh
+│   │   ├── sql/                 # 9 phases with validation
+│   │   └── results/
+│   │
+│   └── log_analytics/           # Sparse columns / APM (10M rows, 3-6 min)
+│       ├── README.md
+│       ├── scripts/run_log_benchmark.sh
+│       ├── sql/                 # 9 phases with validation
+│       └── results/
+│
 ├── docs/
 │   ├── INSTALLATION.md          # Setup and prerequisites
 │   ├── TECHNICAL_ARCHITECTURE.md # PAX internals (2,450+ lines)
 │   ├── METHODOLOGY.md           # Scientific methodology
 │   ├── CONFIGURATION_GUIDE.md   # Production best practices
 │   ├── REPORTING.md             # Analysis and visualization
+│   ├── diagrams/                # Architecture diagrams (3 PNGs)
 │   └── archive/                 # Historical documentation
 │
-├── sql/                         # 6 benchmark phases (run in order)
-│   ├── 01_setup_schema.sql      # Schema + dimensions
-│   ├── 02_create_variants.sql   # AO/AOCO/PAX tables
-│   ├── 03_generate_data.sql     # 200M rows generation
-│   ├── 04_optimize_pax.sql      # Clustering + GUCs
-│   ├── 05_queries_ALL.sql       # 20 benchmark queries
-│   └── 06_collect_metrics.sql   # Metrics collection
-│
-├── scripts/
-│   ├── run_full_benchmark.sh    # Master automation
-│   ├── parse_explain_results.py # Extract metrics
-│   └── generate_charts.py       # Create visualizations
-│
-├── visuals/
-│   ├── diagrams/                # Architecture diagrams (3 PNGs)
-│   └── charts/                  # Generated performance charts
-│
-└── results/                     # Generated during execution
+└── PAX_BENCHMARK_SUITE_PLAN.md  # Implementation roadmap
 ```
+
+**See `benchmarks/README.md` for detailed comparison and workload selection guide.**
 
 ---
 
-## What This Benchmark Proves
+## What This Benchmark Suite Proves
 
-### Storage Efficiency
+### Multiple Workload Types
+
+| Benchmark | Focus | Dataset | Key Findings |
+|-----------|-------|---------|--------------|
+| **retail_sales** | Comprehensive validation | 200M rows | 34% smaller, 32% faster, 88% file skip |
+| **timeseries_iot** | Time-series analytics | 10M sensor readings | Fast iteration (2-5 min), temporal filtering |
+| **financial_trading** | High-cardinality filtering | 10M trading ticks | Bloom filter effectiveness, 5K symbols |
+| **log_analytics** | Sparse columns / APM | 10M log entries | 95% NULL data, sparse filtering advantage |
+
+### PAX Advantages Demonstrated (retail_sales results)
+
+**Storage Efficiency**:
 - **PAX: 41GB** (34% smaller than AOCO's 62GB)
 - **Compression**: 3.5x vs 2.3x (AOCO) through per-column encoding
 
-### Query Performance
+**Query Performance**:
 - **PAX: 32% faster** than AOCO on average (807ms vs 1187ms)
 - **Sparse filtering**: 88% of files skipped
 - **Z-order queries**: 5x speedup on multi-dimensional ranges
 
-### PAX Features Demonstrated
+### PAX Features Validated Across All Benchmarks
 - ✅ Per-column encoding (delta, RLE, zstd)
 - ✅ Zone maps (min/max statistics)
 - ✅ Bloom filters (high-cardinality pruning)
 - ✅ Z-order clustering (multi-dimensional)
 - ✅ Sparse filtering (60-90% file skip)
+- ✅ Validation-first framework (prevents misconfiguration)
 
 ---
 
-## Benchmark Design
+## Benchmark Design Philosophy
 
-### Dataset
+### All Benchmarks Test 4 Variants
+- **AO**: Append-Only row-oriented (baseline)
+- **AOCO**: Append-Only column-oriented (current best practice)
+- **PAX (clustered)**: Optimized with Z-order clustering
+- **PAX (no-cluster)**: PAX without clustering (control group)
+
+### Retail Sales Benchmark (Comprehensive Example)
+
+**Dataset**:
 - **Size**: 200M rows, 25 columns (~70GB per variant)
-- **Variants**: AO (baseline), AOCO (best practice), PAX (optimized)
 - **Dimensions**: 10M customers, 100K products
 - **Distribution**: Realistic skew and correlations
 
-### Query Categories (20 queries)
+**Query Categories (20 queries)**:
 | Category | Focus | Queries |
 |----------|-------|---------|
 | A. Sparse Filtering | Zone maps effectiveness | Q1-Q3 |
@@ -100,14 +146,29 @@ pax_benchmark/
 | F. MVCC | Updates, deletes | Q16-Q18 |
 | G. Edge Cases | NULLs, high cardinality | Q19-Q20 |
 
+**For other benchmark designs**, see individual benchmark READMEs in `benchmarks/` directory.
+
 ---
 
 ## Usage Guide
 
+### Choosing the Right Benchmark
+
+**Starting out / Quick validation** (2-6 minutes):
+- `timeseries_iot` - Time-series analytics, fast iteration
+- `financial_trading` - High-cardinality testing, bloom filters
+- `log_analytics` - Sparse columns (95% NULL), APM workloads
+
+**Production-like validation** (2-4 hours):
+- `retail_sales` - Comprehensive, 200M rows, all PAX features
+
+**See `benchmarks/README.md`** for detailed comparison and selection guide.
+
 ### For Quick Demo
 1. Read: `QUICK_REFERENCE.md` (one page)
-2. Run: `./scripts/run_full_benchmark.sh`
-3. Present: Use `docs/REPORTING.md` for charts
+2. Choose: Pick a fast benchmark (IoT/trading/logs)
+3. Run: `cd benchmarks/{name} && ./scripts/run_*.sh`
+4. Present: Review results in `results/run_*/` directory
 
 ### For Understanding PAX
 1. Start: `README.md` (this file)
@@ -118,36 +179,43 @@ pax_benchmark/
 ### For Production Deployment
 1. Setup: `docs/INSTALLATION.md`
 2. Configure: `docs/CONFIGURATION_GUIDE.md`
-3. Test: Run benchmark on demo cluster
+3. Test: Run appropriate benchmark on demo cluster
 4. Deploy: Apply best practices from results
 
 ---
 
 ## Customization
 
+All benchmarks follow similar structure - customize within each benchmark's directory.
+
 ### Adjust Dataset Size
-Edit `sql/03_generate_data.sql`:
+Edit `benchmarks/{benchmark_name}/sql/05_generate_data.sql`:
 ```sql
--- Change 200M to desired size
+-- Retail sales: Change 200M to desired size
 FROM generate_series(1, 50000000) gs  -- 50M rows
+
+-- IoT/trading/logs: Change 10M to desired size
+FROM generate_series(1, 5000000) gs  -- 5M rows
 ```
 
 ### Modify PAX Configuration
-Edit `sql/02_create_variants.sql`:
+Edit `benchmarks/{benchmark_name}/sql/04_create_variants.sql`:
 ```sql
 CREATE TABLE ... USING pax WITH (
-    minmax_columns='your,columns',      -- 4-6 recommended
-    bloomfilter_columns='your,columns', -- 4-6 recommended
+    minmax_columns='your,columns',      -- 6-12 recommended
+    bloomfilter_columns='your,columns', -- 1-3 recommended (HIGH cardinality only!)
     cluster_columns='your,columns'      -- 2-3 recommended
 );
 ```
 
+**⚠️ CRITICAL**: Always validate bloom filter cardinality first (see benchmark READMEs).
+
 ### Add Custom Queries
-Edit `sql/05_queries_ALL.sql`:
+Edit `benchmarks/{benchmark_name}/sql/07_run_queries.sql`:
 ```sql
--- Add Q21, Q22, etc.
+-- Add custom queries
 \echo 'Q21: Custom query'
-EXPLAIN (ANALYZE, BUFFERS, TIMING) SELECT ...;
+EXPLAIN (ANALYZE, BUFFERS, TIMING) SELECT ... FROM {schema}.TABLE_VARIANT WHERE ...;
 ```
 
 ---
@@ -220,6 +288,7 @@ See `QUICK_REFERENCE.md` for more troubleshooting.
 | File | Purpose | Audience |
 |------|---------|----------|
 | **README.md** | Overview & quick start | Everyone |
+| **benchmarks/README.md** | Benchmark selection guide | Users |
 | **QUICK_REFERENCE.md** | Commands & troubleshooting | Users |
 | **docs/INSTALLATION.md** | Setup instructions | New users |
 | **docs/TECHNICAL_ARCHITECTURE.md** | PAX internals | Developers |
@@ -227,6 +296,7 @@ See `QUICK_REFERENCE.md` for more troubleshooting.
 | **docs/CONFIGURATION_GUIDE.md** | Production tuning | DBAs |
 | **docs/REPORTING.md** | Results visualization | Presenters |
 | **CLAUDE.md** | AI assistant guide | AI tools |
+| **PAX_BENCHMARK_SUITE_PLAN.md** | Implementation roadmap | Contributors |
 
 ---
 

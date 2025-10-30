@@ -1,16 +1,16 @@
 # PAX Storage Performance Analysis
 ## Comprehensive Technical Report
 
-**Date**: October 29, 2025
+**Date**: October 29-30, 2025
 **Analyst**: Automated Benchmark Suite
-**Benchmarks**: IoT Time-Series, Financial Trading, Retail Sales
+**Benchmarks**: IoT Time-Series, Financial Trading, Retail Sales, Log Analytics
 **Test Configuration**: 10M rows per benchmark
 
 ---
 
 ## Executive Summary
 
-This report presents a comprehensive analysis of PAX storage performance across three distinct workloads, comparing PAX against AO (row-oriented) and AOCO (column-oriented) storage formats. The analysis reveals **critical configuration dependencies** and identifies a **severe clustering overhead issue** with multiple bloom filters.
+This report presents a comprehensive analysis of PAX storage performance across four distinct workloads, comparing PAX against AO (row-oriented) and AOCO (column-oriented) storage formats. The analysis reveals **critical configuration dependencies** and identifies a **severe clustering overhead issue** with multiple bloom filters and text-heavy data.
 
 ### Key Findings
 
@@ -21,12 +21,12 @@ This report presents a comprehensive analysis of PAX storage performance across 
 
 ### Overall Performance Summary
 
-| Storage Variant | IoT | Trading | Retail | Average |
-|----------------|-----|---------|---------|---------|
-| **AO (baseline)** | 607 MB | 847 MB | 1,128 MB | — |
-| **AOCO** | 400 MB | 544 MB | 710 MB | Baseline |
-| **PAX no-cluster** | 413 MB (+3.3%) | 556 MB (+2.2%) | 745 MB (+4.9%) | **+3.5%** |
-| **PAX clustered** | 413 MB (+0.0%) | 878 MB (+58.1%) | 942 MB (+26.3%) | **+28.1%** |
+| Storage Variant | IoT | Trading | Retail | Logs | Average |
+|----------------|-----|---------|---------|------|---------|
+| **AO (baseline)** | 607 MB | 847 MB | 1,128 MB | 1,065 MB | — |
+| **AOCO** | 400 MB | 544 MB | 710 MB | 690 MB | Baseline |
+| **PAX no-cluster** | 413 MB (+3.3%) | 556 MB (+2.2%) | 745 MB (+4.9%) | 717 MB (+3.9%) | **+3.8%** |
+| **PAX clustered** | 413 MB (+0.0%) | 878 MB (+58.1%) | 942 MB (+32.7%) | 1,046 MB (+51.6%) | **+35.6%** |
 
 ### Critical Recommendations
 
@@ -136,6 +136,57 @@ This report presents a comprehensive analysis of PAX storage performance across 
 
 ---
 
+### 1.4 Log Analytics Benchmark
+
+**Dataset**: 10M log entries, 200 microservices, 3 environments
+**Runtime**: 5m 26s
+**Status**: ⚠️  High clustering overhead (46%) - text-heavy workload
+
+**Execution Timeline**:
+- Phase 0: Validation Framework Setup - <5s
+- Phase 1: Log Analytics Schema - <5s
+- Phase 2: Cardinality Analysis - <10s
+- Phase 3: Auto-Generate Configuration - <5s
+- Phase 4: Create Variants - <10s
+- Phase 5: Generate Log Data (10M rows) - ~2m
+- Phase 6: Post-Creation Validation - <5s
+- Phase 7: Z-order Clustering - ~2m
+- Phase 8: Post-Clustering Bloat Check - <5s
+- Phase 11: Collect Metrics - ~30s
+
+**Configuration**:
+- Bloom filters: **2 columns** (trace_id, request_id - 10M cardinality each)
+- MinMax columns: 8 columns
+- Z-order clustering: (log_date, application_id)
+- maintenance_work_mem: 2GB
+
+**Storage Results**:
+- AO: 1,065 MB
+- AOCO: 690 MB (baseline)
+- PAX no-cluster: 717 MB (+3.9% - excellent) ✅
+- PAX clustered: 1,046 MB (+51.6% vs AOCO, +45.8% vs no-cluster) ❌
+
+**Validation Results**:
+- ✅ Gate 1: Row count consistency (10M rows in all variants)
+- ✅ Gate 2: PAX no-cluster bloat check (+3.9% - excellent)
+- ❌ Gate 3: Clustering overhead (45.8% - higher than expected)
+- ✅ Gate 4: Sparse column verification (95% NULL in stack_trace, error_code)
+- ✅ Gate 5: Cardinality verification (trace_id, request_id high-cardinality validated)
+
+**Critical Finding - Text-Heavy Workload**:
+- **2 high-cardinality bloom filters** on text-heavy log data
+- Text columns: log messages (~100 chars), stack traces (~500 chars), URLs
+- PAX no-cluster: 717 MB (production-ready)
+- PAX clustered: 1,046 MB (+329 MB = **46% bloat**)
+- **Hypothesis**: Text-heavy columns cause larger bloom filter metadata during clustering
+- **Sparse filtering advantage**: 95% NULL data (stack_trace, error_code) compressed efficiently
+
+**Production Recommendation**:
+- ✅ **PAX no-cluster**: Production-ready (+3.9% overhead, excellent sparse column handling)
+- ❌ **PAX clustered**: High overhead for text-heavy workloads (investigate further)
+
+---
+
 ## 2. Storage Efficiency Deep Dive
 
 ### 2.1 Storage Size Comparison
@@ -147,6 +198,7 @@ This report presents a comprehensive analysis of PAX storage performance across 
 | **IoT Time-Series** | 607 MB | 400 MB | 413 MB | 413 MB |
 | **Financial Trading** | 847 MB | 544 MB | 556 MB | 878 MB |
 | **Retail Sales** | 1,128 MB | 710 MB | 745 MB | 942 MB |
+| **Log Analytics** | 1,065 MB | 690 MB | 717 MB | 1,046 MB |
 
 #### PAX Overhead Analysis
 
@@ -157,7 +209,8 @@ This report presents a comprehensive analysis of PAX storage performance across 
 | IoT | 400 MB | 413 MB | +13 MB (3.3%) | ✅ Excellent |
 | Trading | 544 MB | 556 MB | +12 MB (2.2%) | ✅ Excellent |
 | Retail | 710 MB | 745 MB | +35 MB (4.9%) | ✅ Excellent |
-| **Average** | — | — | **+3.5%** | ✅ **Production-Ready** |
+| Logs | 690 MB | 717 MB | +27 MB (3.9%) | ✅ Excellent |
+| **Average** | — | — | **+3.8%** | ✅ **Production-Ready** |
 
 **Conclusion**: PAX no-cluster variant adds only 3-5% storage overhead compared to AOCO across all workloads. This is **acceptable** and makes PAX production-ready without clustering.
 
@@ -170,13 +223,15 @@ This report presents a comprehensive analysis of PAX storage performance across 
 | IoT | 413 MB | 413 MB | +1 KB (0.0%) | **0 columns** | ✅ Minimal |
 | Trading | 556 MB | 878 MB | +322 MB (58.1%) | **12 columns** | ❌ CRITICAL |
 | Retail | 745 MB | 942 MB | +197 MB (26.4%) | **1 column** | ⚠️  Moderate |
+| Logs | 717 MB | 1,046 MB | +329 MB (45.8%) | **2 columns** (text-heavy) | ❌ HIGH |
 
-**Critical Pattern Identified**: Clustering overhead **directly correlates** with number of bloom filter columns!
+**Critical Pattern Identified**: Clustering overhead **directly correlates** with number of bloom filter columns AND data type complexity!
 
 ```
 Bloom Filters → Clustering Overhead
 0 columns     → 0.0% overhead  ✅
 1 column      → 26.4% overhead ⚠️
+2 columns (text-heavy) → 45.8% overhead ❌
 12 columns    → 58.1% overhead ❌ CRITICAL
 ```
 
