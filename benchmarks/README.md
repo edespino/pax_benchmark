@@ -1,6 +1,6 @@
 # PAX Benchmark Suite
 
-Three comprehensive benchmarks for evaluating PAX storage performance in Apache Cloudberry Database.
+Four comprehensive benchmarks for evaluating PAX storage performance in Apache Cloudberry Database.
 
 ---
 
@@ -11,6 +11,7 @@ Three comprehensive benchmarks for evaluating PAX storage performance in Apache 
 | **[retail_sales](retail_sales/)** | Sales transactions | 200M | 2-4 hrs | Large-scale comprehensive validation |
 | **[timeseries_iot](timeseries_iot/)** | IoT sensor readings | 10M | 2-5 min | Fast iteration, validation-first framework |
 | **[financial_trading](financial_trading/)** | High-frequency ticks | 10M | 4-8 min | High-cardinality column testing |
+| **[log_analytics](log_analytics/)** | Application logs | 10M | 3-6 min | Sparse column testing, observability workloads |
 
 ---
 
@@ -76,6 +77,34 @@ cd benchmarks/financial_trading
 
 ---
 
+### 4. Log Analytics / Observability (`log_analytics/`)
+
+**Sparse column showcase** - Tests PAX advantage on NULL-heavy data.
+
+- **Dataset**: 10M log entries from 200 microservices
+- **Size**: ~5-10GB total
+- **Runtime**: 3-6 minutes
+- **Safety gates**: 4 validation checkpoints (same as IoT/Trading)
+- **Best for**: APM/observability testing, sparse column validation, text-heavy workloads
+
+**Run it**:
+```bash
+cd benchmarks/log_analytics
+./scripts/run_log_benchmark.sh
+```
+
+**Key innovation**: Tests PAX sparse filtering on highly NULL columns (95% NULL for stack_trace, error_code). Validates bloom filters on high-cardinality identifiers (trace_id, request_id).
+
+**Dataset characteristics**:
+- **Sparse columns**: stack_trace (95% NULL), error_code (95% NULL), user_id (30% NULL)
+- **High-cardinality**: trace_id, request_id (~10M unique each)
+- **Low-cardinality**: log_level (6 values), application_id (200 values)
+- **Realistic distribution**: 80% INFO, 15% WARN, 4% ERROR, 1% FATAL
+
+**Query categories**: Time filtering, bloom filters, Z-order clustering, sparse columns, HTTP performance, multi-dimensional analysis
+
+---
+
 ## Common Features
 
 All benchmarks test:
@@ -92,6 +121,10 @@ All benchmarks test:
 
 **Testing bloom filters?** → Use `financial_trading` (4-8 min, high cardinality)
 
+**Testing sparse columns?** → Use `log_analytics` (3-6 min, 95% NULL data)
+
+**APM/observability data?** → Use `log_analytics` (text-heavy, realistic log distributions)
+
 **Production validation?** → Use `retail_sales` (2-4 hrs, comprehensive)
 
 **Testing new config?** → Use `timeseries_iot` first (fast), then `retail_sales` (thorough)
@@ -105,7 +138,8 @@ Each benchmark creates timestamped results:
 benchmarks/
 ├── retail_sales/results/run_YYYYMMDD_HHMMSS/
 ├── timeseries_iot/results/run_YYYYMMDD_HHMMSS/
-└── financial_trading/results/run_YYYYMMDD_HHMMSS/
+├── financial_trading/results/run_YYYYMMDD_HHMMSS/
+└── log_analytics/results/run_YYYYMMDD_HHMMSS/
 ```
 
 ---
