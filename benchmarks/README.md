@@ -1,6 +1,6 @@
 # PAX Benchmark Suite
 
-Four comprehensive benchmarks for evaluating PAX storage performance in Apache Cloudberry Database.
+Six comprehensive benchmarks for evaluating PAX storage performance in Apache Cloudberry Database.
 
 ---
 
@@ -12,6 +12,8 @@ Four comprehensive benchmarks for evaluating PAX storage performance in Apache C
 | **[timeseries_iot](timeseries_iot/)** | IoT sensor readings | 10M | 2-5 min | Fast iteration, validation-first framework |
 | **[financial_trading](financial_trading/)** | High-frequency ticks | 10M | 4-8 min | High-cardinality column testing |
 | **[log_analytics](log_analytics/)** | Application logs | 10M | 3-6 min | Sparse column testing, observability workloads |
+| **[ecommerce_clickstream](ecommerce_clickstream/)** | User clickstream | 10M | 4-5 min | Multi-dimensional clustering, e-commerce analytics |
+| **[timeseries_iot_streaming](timeseries_iot_streaming/)** | CDR streaming | 50M | 20-55 min | INSERT throughput, continuous batch loading |
 
 ---
 
@@ -105,6 +107,52 @@ cd benchmarks/log_analytics
 
 ---
 
+### 5. E-commerce Clickstream (`ecommerce_clickstream/`)
+
+**Multi-dimensional clustering** - Tests Z-order on correlated dimensions.
+
+- **Dataset**: 10M clickstream events, 464K users, 100K products
+- **Size**: ~5-8GB total
+- **Runtime**: 4-5 minutes
+- **Safety gates**: 4 validation checkpoints
+- **Best for**: E-commerce analytics, multi-dimensional queries, session analysis
+
+**Run it**:
+```bash
+cd benchmarks/ecommerce_clickstream
+./scripts/run_clickstream_benchmark.sh
+```
+
+**Key innovation**: Achieved 0.2% clustering overhead (3 validated VARCHAR bloom filters). Demonstrates "3 bloom filter rule" as optimal configuration. Time-based queries 43-77x faster than AOCO with Z-order clustering.
+
+---
+
+### 6. Streaming INSERT Performance (`timeseries_iot_streaming/`)
+
+**INSERT throughput testing** - Tests PAX write performance for continuous batch loading workloads.
+
+- **Dataset**: 50M Call Detail Records (CDRs)
+- **Size**: ~8-12GB per variant
+- **Runtime**: 20-55 minutes (Phase 1: 20-25 min, Phase 2: 30-35 min)
+- **Test focus**: Continuous batch INSERT performance
+- **Best for**: Telecommunications, IoT streaming, production write workload validation
+
+**Run it**:
+```bash
+cd benchmarks/timeseries_iot_streaming
+./scripts/run_phase1_noindex.sh        # Phase 1: No indexes (20 min)
+./scripts/run_phase2_withindex.sh      # Phase 2: With indexes (30 min)
+./scripts/run_streaming_benchmark.sh   # Both phases (50 min)
+```
+
+**Key innovation**: Only benchmark testing INSERT throughput (not just queries). Simulates realistic 24-hour telecommunications traffic pattern with 500 batches (10K-500K rows each). Two-phase testing: pure INSERT speed vs production scenario with indexes.
+
+**🔴 Critical Finding** (October 2025): PAX achieved **85-86% of AO write speed** (262K vs 306K rows/sec), NOT the documented "AO-level" (100%). Root cause identified as 13.6% base write path overhead (auxiliary table writes, protobuf serialization, file creation). However, PAX delivers **1.1x to 22x query speedup** vs AOCO, justifying the write penalty for query-intensive workloads.
+
+**What it answers**: "Does PAX write performance meet streaming workload requirements?" → **Yes for <200K rows/sec, No for >250K rows/sec**
+
+---
+
 ## Common Features
 
 All benchmarks test:
@@ -125,6 +173,10 @@ All benchmarks test:
 
 **APM/observability data?** → Use `log_analytics` (text-heavy, realistic log distributions)
 
+**Multi-dimensional clustering?** → Use `ecommerce_clickstream` (4-5 min, Z-order validation)
+
+**Testing INSERT throughput?** → Use `timeseries_iot_streaming` (20-55 min, write performance)
+
 **Production validation?** → Use `retail_sales` (2-4 hrs, comprehensive)
 
 **Testing new config?** → Use `timeseries_iot` first (fast), then `retail_sales` (thorough)
@@ -139,7 +191,9 @@ benchmarks/
 ├── retail_sales/results/run_YYYYMMDD_HHMMSS/
 ├── timeseries_iot/results/run_YYYYMMDD_HHMMSS/
 ├── financial_trading/results/run_YYYYMMDD_HHMMSS/
-└── log_analytics/results/run_YYYYMMDD_HHMMSS/
+├── log_analytics/results/run_YYYYMMDD_HHMMSS/
+├── ecommerce_clickstream/results/run_YYYYMMDD_HHMMSS/
+└── timeseries_iot_streaming/results/run_YYYYMMDD_HHMMSS/
 ```
 
 ---

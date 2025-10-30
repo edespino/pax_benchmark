@@ -95,9 +95,19 @@ pax_benchmark/
 │   │   ├── sql/ (10 files with validation framework)
 │   │   └── results/
 │   │
-│   └── ecommerce_clickstream/   # E-commerce clickstream (10M rows, 4-5 min)
+│   ├── ecommerce_clickstream/   # E-commerce clickstream (10M rows, 4-5 min)
+│   │   ├── README.md
+│   │   ├── scripts/run_clickstream_benchmark.sh
+│   │   ├── sql/ (12 files with validation framework)
+│   │   ├── docs/BENCHMARK_RESULTS_2025-10-30.md
+│   │   └── results/
+│   │
+│   └── timeseries_iot_streaming/  # Streaming INSERT benchmark (50M rows, 20-55 min)
 │       ├── README.md
-│       ├── scripts/run_clickstream_benchmark.sh
+│       ├── scripts/
+│       │   ├── run_streaming_benchmark.sh    # Master (both phases)
+│       │   ├── run_phase1_noindex.sh         # Phase 1 only (20 min)
+│       │   └── run_phase2_withindex.sh       # Phase 2 only (30 min)
 │       ├── sql/ (12 files with validation framework)
 │       ├── docs/BENCHMARK_RESULTS_2025-10-30.md
 │       └── results/
@@ -138,6 +148,19 @@ cd benchmarks/financial_trading
 ```bash
 cd benchmarks/log_analytics
 ./scripts/run_log_benchmark.sh
+```
+
+**Multi-dimensional clustering / E-commerce** (4-5 min):
+```bash
+cd benchmarks/ecommerce_clickstream
+./scripts/run_clickstream_benchmark.sh
+```
+
+**INSERT throughput / Streaming workloads** (20-55 min):
+```bash
+cd benchmarks/timeseries_iot_streaming
+./scripts/run_phase1_noindex.sh        # Phase 1 only (20 min)
+./scripts/run_streaming_benchmark.sh   # Both phases (50 min)
 ```
 
 **Comprehensive validation** (2-4 hours):
@@ -904,6 +927,24 @@ Be direct and concise.
 
 ### Latest Additions (October 30, 2025)
 
+**Streaming INSERT Performance Benchmark** (6th of 7 benchmarks) - **NEW**:
+- Dataset: 50M Call Detail Records (telecommunications CDRs)
+- Runtime: 20-55 minutes (Phase 1: 20 min, Phase 2: 30 min)
+- Focus: INSERT throughput for continuous batch loading
+- **🔴 CRITICAL FINDING**: PAX achieves **85-86% of AO write speed**, NOT "AO-level" (100%)
+  - AO: 306,211 rows/sec (100%)
+  - AOCO: 290,189 rows/sec (94.8%)
+  - PAX: 262,036 rows/sec (85.6%) ← **14% slower than documented**
+- **Root Cause Identified**: 13.6% base PAX write path overhead
+  - Auxiliary table writes (~5-10%)
+  - Protobuf serialization (~2-5%)
+  - File creation overhead (~1-3%)
+  - Custom WAL records (~2-4%)
+  - **Bloom filters add <2%** (NOT the primary cause)
+- **Query Performance**: PAX delivers 1.1x to 22x speedup vs AOCO (justifies write penalty)
+- **Production Guidance**: PAX viable for <200K rows/sec, not viable for >250K rows/sec
+- **Documentation**: `benchmarks/timeseries_iot_streaming/PAX_WRITE_PERFORMANCE_ROOT_CAUSE.md`
+
 **E-commerce Clickstream Benchmark** (5th of 7 benchmarks):
 - Dataset: 10M events, 3.9M sessions, 464K users, 100K products
 - Best clustering overhead achieved: **0.2%** (3 validated VARCHAR bloom filters)
@@ -913,7 +954,7 @@ Be direct and concise.
 - Runtime: 4m 31s for complete execution
 
 **PAX Development Team Report**:
-- Comprehensive analysis of all 5 benchmarks (50M+ rows tested)
+- Comprehensive analysis of all 6 benchmarks (50M+ rows tested)
 - Identifies 5 critical issues requiring dev team attention
 - 20+ specific technical questions for investigation
 - Cross-benchmark comparison reveals clustering overhead variance (0.002% to 58.1%)
