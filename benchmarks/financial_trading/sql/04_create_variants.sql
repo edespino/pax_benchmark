@@ -48,13 +48,13 @@ CREATE TABLE trading.tick_data_ao (
     ask_size INTEGER,
 
     -- Trade characteristics
-    trade_type VARCHAR(10),
+    trade_type VARCHAR(25),
     buyer_type VARCHAR(20),
     seller_type VARCHAR(20),
 
     -- Conditions
     trade_condition VARCHAR(4),
-    sale_condition VARCHAR(10),
+    sale_condition VARCHAR(20),
 
     -- Derived fields
     price_change_bps NUMERIC(10,4),
@@ -94,11 +94,11 @@ CREATE TABLE trading.tick_data_aoco (
     ask_price NUMERIC(18,6),
     bid_size INTEGER,
     ask_size INTEGER,
-    trade_type VARCHAR(10),
+    trade_type VARCHAR(25),
     buyer_type VARCHAR(20),
     seller_type VARCHAR(20),
     trade_condition VARCHAR(4),
-    sale_condition VARCHAR(10),
+    sale_condition VARCHAR(20),
     price_change_bps NUMERIC(10,4),
     is_block_trade BOOLEAN,
     sequence_number BIGINT,
@@ -138,11 +138,11 @@ CREATE TABLE trading.tick_data_pax (
     ask_price NUMERIC(18,6),
     bid_size INTEGER,
     ask_size INTEGER,
-    trade_type VARCHAR(10),
+    trade_type VARCHAR(25),
     buyer_type VARCHAR(20),
     seller_type VARCHAR(20),
     trade_condition VARCHAR(4),
-    sale_condition VARCHAR(10),
+    sale_condition VARCHAR(20),
     price_change_bps NUMERIC(10,4),
     is_block_trade BOOLEAN,
     sequence_number BIGINT,
@@ -164,9 +164,9 @@ CREATE TABLE trading.tick_data_pax (
     bloomfilter_columns='trade_id,symbol',
 
     -- Z-order clustering for time-series + symbol queries
-    -- Using trade_time_bucket (TIMESTAMP rounded to second) + symbol
+    -- Using trade_date (DATE) + symbol (TIMESTAMP not supported for Z-order)
     cluster_type='zorder',
-    cluster_columns='trade_time_bucket,symbol',
+    cluster_columns='trade_date,symbol',
 
     -- Storage format
     storage_format='porc'
@@ -196,11 +196,11 @@ CREATE TABLE trading.tick_data_pax_nocluster (
     ask_price NUMERIC(18,6),
     bid_size INTEGER,
     ask_size INTEGER,
-    trade_type VARCHAR(10),
+    trade_type VARCHAR(25),
     buyer_type VARCHAR(20),
     seller_type VARCHAR(20),
     trade_condition VARCHAR(4),
-    sale_condition VARCHAR(10),
+    sale_condition VARCHAR(20),
     price_change_bps NUMERIC(10,4),
     is_block_trade BOOLEAN,
     sequence_number BIGINT,

@@ -100,7 +100,7 @@ BEGIN
         s.n_distinct,
         CASE
             WHEN s.n_distinct >= 0 THEN s.n_distinct::BIGINT
-            ELSE (s.reltuples * ABS(s.n_distinct))::BIGINT
+            ELSE (r.reltuples * ABS(s.n_distinct))::BIGINT
         END AS cardinality_estimate,
         CASE
             WHEN ABS(s.n_distinct::NUMERIC) >= v_min_bloom THEN '✅ SAFE'::TEXT

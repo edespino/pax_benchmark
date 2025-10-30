@@ -70,7 +70,7 @@ SELECT trading_validation.generate_pax_config(
     'pg_temp',              -- Schema containing sample table
     'tick_data_sample',     -- Sample table name
     10000000,               -- Target rows for production table
-    'trade_time_bucket,symbol'  -- Z-order clustering columns (TIMESTAMP + VARCHAR supported)
+    'trade_date,symbol'  -- Z-order clustering columns (DATE + VARCHAR supported, TIMESTAMP not supported)
 );
 
 \echo ''

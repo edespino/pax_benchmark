@@ -147,13 +147,6 @@ main() {
     echo "Estimated time: 2-4 hours"
     echo "Estimated disk space: ~300GB"
     echo ""
-    read -p "Continue? (y/N): " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_warning "Benchmark cancelled by user"
-        exit 0
-    fi
-    echo ""
 
     # Phase 1: Schema setup
     if ! run_sql_phase "Phase1_Schema" "$SQL_DIR/01_setup_schema.sql"; then

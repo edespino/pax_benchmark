@@ -88,8 +88,6 @@ echo "  ✅ Fast iteration (2-5 minutes runtime)"
 echo ""
 echo "Results will be saved to: ${RESULTS_DIR}"
 echo ""
-read -p "Press Enter to start benchmark..."
-echo ""
 
 # =====================================================
 # Phase 0: Validation Framework Setup
@@ -136,27 +134,7 @@ run_phase 3 "Auto-Generate Safe Configuration" \
     "${RESULTS_DIR}/03_generated_config.sql" || exit 1
 
 # =====================================================
-# User Review Checkpoint
-# =====================================================
-
-echo "==========================================================="
-echo "  CHECKPOINT: Review Generated Configuration"
-echo "==========================================================="
-echo ""
-echo "Before proceeding, please review the generated configuration:"
-echo "  File: ${RESULTS_DIR}/03_generated_config.sql"
-echo ""
-echo "Key items to verify:"
-echo "  ✅ Bloom filter columns have cardinality >= 1000"
-echo "  ✅ maintenance_work_mem is set appropriately"
-echo "  ✅ No low-cardinality columns in bloom filters"
-echo ""
-read -p "Press Enter to continue with table creation..."
-echo ""
-
-# =====================================================
 # Phases 4-11: Remaining benchmark phases
-# (Note: These SQL files would be created next)
 # =====================================================
 
 if [ -f sql/04_create_variants.sql ]; then

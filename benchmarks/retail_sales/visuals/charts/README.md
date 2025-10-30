@@ -17,7 +17,7 @@ Two options for generating charts:
 Generate example charts with sample data for presentations:
 
 ```bash
-cd /Users/eespino/workspace/edespino/pax_benchmark
+cd benchmarks/retail_sales
 python3 scripts/generate_charts.py
 ```
 
@@ -33,7 +33,7 @@ This creates:
 Generate charts from real benchmark results:
 
 ```bash
-cd /Users/eespino/workspace/edespino/pax_benchmark
+cd benchmarks/retail_sales
 python3 scripts/generate_charts.py results/run_YYYYMMDD_HHMMSS/
 ```
 
@@ -175,7 +175,7 @@ To update charts with new data:
 
 ```bash
 # After running benchmark
-cd /Users/eespino/workspace/edespino/pax_benchmark
+cd benchmarks/retail_sales
 python3 scripts/generate_charts.py results/run_YYYYMMDD_HHMMSS/
 
 # Charts will be regenerated in visuals/charts/

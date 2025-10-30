@@ -57,15 +57,8 @@ trade_generation AS (
         -- Unique trade ID
         gs AS trade_id,
 
-        -- Select symbol (Zipf distribution: 20% of symbols get 80% of trades)
-        CASE
-            WHEN random() < 0.80 THEN  -- 80% of trades
-                (SELECT symbol FROM symbol_cache OFFSET (random() * 999)::INT LIMIT 1)
-            ELSE  -- 20% of trades on long tail
-                (SELECT symbol FROM symbol_cache OFFSET (1000 + random() * 3999)::INT LIMIT 1)
-        END AS symbol,
-
-        -- Symbol metadata
+        -- Symbol and metadata (from CROSS JOIN LATERAL below - Zipf distribution)
+        s.symbol,
         s.exchange_id,
         s.price_range_min,
         s.price_range_max,

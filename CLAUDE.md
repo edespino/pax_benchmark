@@ -52,57 +52,91 @@ pax_benchmark/
 ├── QUICK_REFERENCE.md           # One-page cheat sheet
 ├── CLAUDE.md                    # This file
 │
+├── benchmarks/                  # All benchmark suites
+│   ├── README.md                # Benchmark suite overview
+│   │
+│   ├── retail_sales/            # Original comprehensive benchmark (200M rows, 2-4 hrs)
+│   │   ├── README.md
+│   │   ├── scripts/
+│   │   │   ├── run_full_benchmark.sh    # MASTER SCRIPT (runs all phases)
+│   │   │   ├── parse_explain_results.py # Extract metrics from logs
+│   │   │   └── generate_charts.py       # Create PNG charts
+│   │   ├── sql/
+│   │   │   ├── 01_setup_schema.sql      # Schema + dimensions
+│   │   │   ├── 02_create_variants.sql   # AO/AOCO/PAX/PAX-no-cluster (4 variants)
+│   │   │   ├── 03_generate_data.sql     # 200M rows (~70GB per variant)
+│   │   │   ├── 03_generate_data_SMALL.sql # 1M rows for quick testing
+│   │   │   ├── 04_optimize_pax.sql      # GUCs + Z-order clustering (sets maintenance_work_mem)
+│   │   │   ├── 04a_validate_clustering_config.sql # Pre-flight memory check
+│   │   │   ├── 05_queries_ALL.sql       # 20 queries, 7 categories
+│   │   │   ├── 05_test_sample_queries.sql # Quick 2-query test
+│   │   │   ├── 06_collect_metrics.sql   # Storage + performance metrics
+│   │   │   ├── 07_inspect_pax_internals.sql # PAX statistics & cardinality analysis
+│   │   │   └── 08_analyze_query_plans.sql   # Detailed EXPLAIN ANALYZE
+│   │   ├── visuals/
+│   │   │   └── charts/          # Chart generation (retail_sales specific)
+│   │   └── results/             # Historical results + analysis
+│   │
+│   ├── timeseries_iot/          # IoT sensor benchmark (10M rows, 2-5 min)
+│   │   ├── README.md
+│   │   ├── scripts/run_iot_benchmark.sh
+│   │   ├── sql/ (9 files with validation framework)
+│   │   └── results/
+│   │
+│   └── financial_trading/       # Trading tick benchmark (10M rows, 4-8 min)
+│       ├── README.md
+│       ├── scripts/run_trading_benchmark.sh
+│       ├── sql/ (9 files with validation framework)
+│       └── results/
+│
 ├── docs/
 │   ├── INSTALLATION.md          # Setup instructions
 │   ├── TECHNICAL_ARCHITECTURE.md # PAX internals (2,450+ lines)
 │   ├── METHODOLOGY.md           # Scientific approach
 │   ├── CONFIGURATION_GUIDE.md   # Production best practices
 │   ├── REPORTING.md             # Results visualization
+│   ├── diagrams/                # PAX architecture diagrams (3 PNGs)
 │   └── archive/                 # Historical meta-docs
 │
-├── sql/                         # Core benchmark phases + analysis tools
-│   ├── 01_setup_schema.sql      # Schema + dimensions
-│   ├── 02_create_variants.sql   # AO/AOCO/PAX/PAX-no-cluster (4 variants)
-│   ├── 03_generate_data.sql     # 200M rows (~70GB per variant)
-│   ├── 03_generate_data_SMALL.sql # 10M rows for quick testing
-│   ├── 04_optimize_pax.sql      # GUCs + Z-order clustering (CRITICAL: sets maintenance_work_mem)
-│   ├── 04a_validate_clustering_config.sql # NEW: Pre-flight memory check
-│   ├── 05_queries_ALL.sql       # 20 queries, 7 categories
-│   ├── 05_test_sample_queries.sql # Quick 2-query test for 4 variants
-│   ├── 06_collect_metrics.sql   # Storage + performance metrics
-│   ├── 07_inspect_pax_internals.sql # NEW: PAX statistics & cardinality analysis
-│   └── 08_analyze_query_plans.sql   # NEW: Detailed EXPLAIN ANALYZE
-│
-├── scripts/
-│   ├── run_full_benchmark.sh    # MASTER SCRIPT (runs all phases)
-│   ├── parse_explain_results.py # Extract metrics from logs
-│   └── generate_charts.py       # Create PNG charts
-│
-├── visuals/
-│   ├── diagrams/                # 3 architecture PNGs
-│   └── charts/                  # Generated on-demand
-│
-└── results/                     # Created during execution (gitignored)
+└── (root level documentation files)
 ```
 
 ---
 
 ## Common User Tasks
 
-### Execute Full Benchmark
+### Choose a Benchmark
+
+**Quick iteration / Development** (2-5 min):
 ```bash
-./scripts/run_full_benchmark.sh
-# Runtime: 2-4 hours
-# Output: results/run_YYYYMMDD_HHMMSS/
+cd benchmarks/timeseries_iot
+./scripts/run_iot_benchmark.sh
 ```
 
-### Execute Individual Phases (4-Variant Test with 10M rows)
+**High-cardinality testing** (4-8 min):
 ```bash
-# Recommended workflow (includes new validation scripts)
+cd benchmarks/financial_trading
+./scripts/run_trading_benchmark.sh
+```
+
+**Comprehensive validation** (2-4 hours):
+```bash
+cd benchmarks/retail_sales
+./scripts/run_full_benchmark.sh
+```
+
+---
+
+### Retail Sales Benchmark - Individual Phases (4-Variant Test with 1M rows)
+
+```bash
+cd benchmarks/retail_sales
+
+# Recommended workflow (includes validation scripts)
 psql -f sql/01_setup_schema.sql                    # 5-10 min
 psql -f sql/02_create_variants.sql                 # 2 min (4 variants)
-psql -f sql/03_generate_data_SMALL.sql             # 2-3 min (10M rows)
-psql -f sql/04a_validate_clustering_config.sql     # NEW: Validate memory (30 sec)
+psql -f sql/03_generate_data_SMALL.sql             # 2-3 min (1M rows)
+psql -f sql/04a_validate_clustering_config.sql     # Validate memory (30 sec)
 psql -f sql/04_optimize_pax.sql                    # 5-10 min (sets maintenance_work_mem=2GB)
 psql -f sql/05_test_sample_queries.sql             # 2 min (2 queries × 4 variants)
 psql -f sql/06_collect_metrics.sql                 # 2 min
@@ -114,8 +148,13 @@ psql -f sql/03_generate_data.sql                   # 30-60 min
 # Increase maintenance_work_mem to 8GB+ before sql/04_optimize_pax.sql
 ```
 
-### Generate Charts
+---
+
+### Generate Charts (Retail Sales Only)
+
 ```bash
+cd benchmarks/retail_sales
+
 # Real charts (after benchmark)
 python3 scripts/generate_charts.py results/run_YYYYMMDD_HHMMSS/
 
@@ -123,8 +162,13 @@ python3 scripts/generate_charts.py results/run_YYYYMMDD_HHMMSS/
 python3 scripts/generate_charts.py
 ```
 
+---
+
 ### Analyze Results
+
 ```bash
+cd benchmarks/retail_sales
+
 # View comparison
 cat results/run_YYYYMMDD_HHMMSS/comparison_table.md
 
@@ -134,17 +178,17 @@ python3 scripts/parse_explain_results.py results/run_YYYYMMDD_HHMMSS/
 
 ---
 
-## Modifying the Benchmark
+## Modifying the Benchmarks
 
-### Change Dataset Size
-**File**: `sql/03_generate_data.sql`
+### Change Dataset Size (Retail Sales)
+**File**: `benchmarks/retail_sales/sql/03_generate_data.sql`
 ```sql
 -- Line ~45: Change 200000000 to desired size
 FROM generate_series(1, 50000000) gs  -- 50M instead of 200M
 ```
 
-### Adjust PAX Configuration
-**File**: `sql/02_create_variants.sql` (lines 111-141)
+### Adjust PAX Configuration (Retail Sales)
+**File**: `benchmarks/retail_sales/sql/02_create_variants.sql` (lines 111-141)
 
 **⚠️  CRITICAL CONFIGURATION PRINCIPLES** (as of Oct 2025):
 
@@ -187,8 +231,8 @@ Is column in WHERE clause?
 └─ NO  → Skip both
 ```
 
-### Add Custom Queries
-**File**: `sql/05_queries_ALL.sql`
+### Add Custom Queries (Retail Sales)
+**File**: `benchmarks/retail_sales/sql/05_queries_ALL.sql`
 ```sql
 -- Add at end (after Q20)
 \echo 'Q21: Your custom query'
@@ -196,8 +240,8 @@ EXPLAIN (ANALYZE, BUFFERS, TIMING)
 SELECT ... FROM benchmark.TABLE_VARIANT WHERE ...;
 ```
 
-### Tune GUCs
-**File**: `sql/04_optimize_pax.sql` (lines 18-90)
+### Tune GUCs (Retail Sales)
+**File**: `benchmarks/retail_sales/sql/04_optimize_pax.sql` (lines 18-90)
 
 **⚠️  CRITICAL**: Set maintenance_work_mem BEFORE clustering (prevents 2-3x storage bloat)
 
@@ -218,7 +262,7 @@ SET pax.max_tuples_per_file = 1310720;    -- 1.31M tuples
 SET pax.max_size_per_file = 67108864;     -- 64MB
 ```
 
-**Validation**: Run `sql/04a_validate_clustering_config.sql` to check memory requirements
+**Validation**: Run `benchmarks/retail_sales/sql/04a_validate_clustering_config.sql` to check memory requirements
 
 ---
 
@@ -479,7 +523,7 @@ SELECT pg_size_pretty(pg_total_relation_size('foo'));
 ```
 
 **Root Cause Diagnosis Requires**:
-1. Run `sql/07_inspect_pax_internals.sql` (custom script)
+1. Run `benchmarks/retail_sales/sql/07_inspect_pax_internals.sql` (custom script)
 2. Analyze pg_stats for each column
 3. Check bloom filter configuration vs cardinality
 4. Reverse-engineer what went wrong
@@ -509,30 +553,44 @@ SELECT pg_size_pretty(pg_total_relation_size('foo'));
 **For AO/AOCO**: An experienced DBA can configure correctly in 5 minutes without tools.
 
 **For PAX**: Even experts need:
-1. Cardinality analysis script (`sql/07_inspect_pax_internals.sql`)
-2. Memory validation script (`sql/04a_validate_clustering_config.sql`)
-3. Configuration safety checklist (`docs/PAX_CONFIGURATION_SAFETY.md`)
+1. Cardinality analysis script (e.g., `benchmarks/retail_sales/sql/07_inspect_pax_internals.sql`)
+2. Memory validation script (e.g., `benchmarks/retail_sales/sql/04a_validate_clustering_config.sql`)
+3. Validation frameworks (built into `timeseries_iot` and `financial_trading` benchmarks)
 4. Pre-deployment validation (90 minutes minimum)
 5. Ongoing monitoring (detect silent bloat)
 
-**This is why `docs/AI_VALIDATION_TOOLING_PLAN.md` exists** — PAX is fundamentally different from AO/AOCO in its configuration complexity and failure modes.
+**This is why the validation-first benchmarks exist** (`timeseries_iot` and `financial_trading`) — PAX is fundamentally different from AO/AOCO in its configuration complexity and failure modes.
 
 ---
 
-### Benchmark Design
+### Benchmark Suite Design
 
-**Dataset**: 200M rows, 25 columns, ~70GB per variant
-- Fact table: sales transactions with realistic distributions
-- Dimensions: 10M customers, 100K products
-- Patterns: Correlated (date+region), skewed, sparse fields
+**Three Benchmarks Available**:
 
-**Four Variants**:
+1. **Retail Sales** (`benchmarks/retail_sales/`)
+   - Dataset: 200M rows, 25 columns, ~70GB per variant
+   - Fact table: sales transactions with realistic distributions
+   - Dimensions: 10M customers, 100K products
+   - Patterns: Correlated (date+region), skewed, sparse fields
+   - Runtime: 2-4 hours (comprehensive)
+
+2. **IoT Time-Series** (`benchmarks/timeseries_iot/`)
+   - Dataset: 10M sensor readings, 100K devices
+   - Validation-first: 4 safety gates
+   - Runtime: 2-5 minutes (fast iteration)
+
+3. **Financial Trading** (`benchmarks/financial_trading/`)
+   - Dataset: 10M trading ticks, 5K symbols
+   - High-cardinality testing
+   - Runtime: 4-8 minutes
+
+**All benchmarks test 4 variants**:
 1. **AO** - Append-Only row-oriented (baseline)
 2. **AOCO** - Append-Only column-oriented (current best practice)
 3. **PAX (clustered)** - Optimized with Z-order clustering
 4. **PAX (no-cluster)** - PAX without clustering (control group)
 
-**Query Categories** (20 queries):
+**Retail Sales Query Categories** (20 queries):
 - **A (Q1-Q3)**: Sparse filtering effectiveness
 - **B (Q4-Q6)**: Bloom filter effectiveness
 - **C (Q7-Q9)**: Z-order clustering benefits
@@ -577,15 +635,15 @@ SELECT pg_size_pretty(pg_total_relation_size('foo'));
 - ⚠️  File-level pruning: Still disabled in code (not a config issue)
 
 **Root Causes Identified & Fixed**:
-1. **PRIMARY ISSUE**: Bloom filters on low-cardinality columns → **FIXED** in sql/02_create_variants.sql
+1. **PRIMARY ISSUE**: Bloom filters on low-cardinality columns → **FIXED** in `benchmarks/retail_sales/sql/02_create_variants.sql`
    - Caused: 81% storage bloat, 54x memory overhead, 45% compression degradation
    - Fix: Remove transaction_hash (n_distinct=-1) and customer_id (n_distinct=-0.46)
-2. **SECONDARY**: Low maintenance_work_mem → **FIXED** in sql/04_optimize_pax.sql
+2. **SECONDARY**: Low maintenance_work_mem → **FIXED** in `benchmarks/retail_sales/sql/04_optimize_pax.sql`
 3. **CODE-LEVEL**: Predicate pushdown disabled in pax_scanner.cc:366 (requires code fix)
 
 **Key Lesson**: **ALWAYS validate column cardinality before configuring bloom filters.**
 
-See: `results/OPTIMIZATION_RESULTS_COMPARISON.md` for complete analysis
+See: `benchmarks/retail_sales/results/OPTIMIZATION_RESULTS_COMPARISON.md` for complete analysis
 
 ---
 
@@ -598,16 +656,17 @@ See: `results/OPTIMIZATION_RESULTS_COMPARISON.md` for complete analysis
 # FIX: Validate cardinality BEFORE configuring bloom filters
 
 # Step 1: Check cardinality of ALL columns
-psql -f sql/07_inspect_pax_internals.sql
+cd benchmarks/retail_sales  # or timeseries_iot or financial_trading
+psql -f sql/07_inspect_pax_internals.sql  # retail_sales has this
 
 # Step 2: Remove any bloom filter columns with n_distinct < 1000
-# Edit sql/02_create_variants.sql:
+# Edit benchmarks/*/sql/02_create_variants.sql:
 #   bloomfilter_columns='high_card_col1,high_card_col2'  -- ONLY >1000 distinct
 
 # CAUSE #2 (SECONDARY): Low maintenance_work_mem
 # Symptoms: 2x storage bloat, normal memory usage
 # FIX: Validate memory BEFORE clustering
-psql -f sql/04a_validate_clustering_config.sql
+psql -f sql/04a_validate_clustering_config.sql  # Available in retail_sales
 psql -c "SET maintenance_work_mem='2GB';" -f sql/04_optimize_pax.sql
 ```
 
@@ -626,14 +685,14 @@ FROM pg_stats
 WHERE tablename = 'your_table_name'
 ORDER BY ABS(n_distinct) DESC;
 
--- Or use the inspection script:
-psql -f sql/07_inspect_pax_internals.sql
+-- Or use the inspection script (retail_sales):
+cd benchmarks/retail_sales && psql -f sql/07_inspect_pax_internals.sql
 ```
 
 **"PAX queries slower than AOCO"**
 - Expected in Cloudberry 3.0.0-devel (predicate pushdown disabled)
 - Check: `psql -c "SHOW pax.enable_sparse_filter;"` (should be `on`)
-- Analyze: `psql -f sql/08_analyze_query_plans.sql`
+- Analyze: `cd benchmarks/retail_sales && psql -f sql/08_analyze_query_plans.sql`
 - Not a config issue if "Rows Removed by Filter" is high
 
 **"PAX extension not found"**
@@ -644,8 +703,9 @@ make clean && make -j8 && make install
 ```
 
 **"Out of disk space"**
-- Need ~300GB free for full benchmark
-- For testing: Use `sql/03_generate_data_SMALL.sql` (10M rows, ~5GB)
+- Need ~300GB free for full retail_sales benchmark (200M rows)
+- For testing: Use smaller benchmarks (`timeseries_iot` 2-5 min, `financial_trading` 4-8 min)
+- Or use `benchmarks/retail_sales/sql/03_generate_data_SMALL.sql` (1M rows, ~1GB)
 
 **"Connection refused"**
 ```bash
@@ -665,26 +725,31 @@ pip3 install matplotlib seaborn
 
 **Most Important** (Start Here):
 1. **OPTIMIZATION_CHANGES.md** - Latest updates & fixes (Oct 2025)
-2. **results/BENCHMARK_REVIEW_AND_RECOMMENDATIONS.md** - Root cause analysis
+2. **benchmarks/README.md** - Benchmark suite overview
 3. `QUICK_REFERENCE.md` - Commands & troubleshooting
 4. `docs/CONFIGURATION_GUIDE.md` - PAX tuning (updated with memory guidance)
 5. `docs/TECHNICAL_ARCHITECTURE.md` - Deep understanding (2,450+ lines)
 
-**Execution Scripts** (In Order):
-1. `sql/01_setup_schema.sql` - Schema creation
-2. `sql/02_create_variants.sql` - 4 variants (OPTIMIZED with bloom filter fixes)
-3. `sql/03_generate_data_SMALL.sql` - 10M rows for testing
-4. `sql/04a_validate_clustering_config.sql` - NEW: Memory validation
-5. `sql/04_optimize_pax.sql` - UPDATED: Sets maintenance_work_mem=2GB
-6. `sql/05_test_sample_queries.sql` - Quick 2-query test
-7. `sql/06_collect_metrics.sql` - Storage & performance
-8. `sql/07_inspect_pax_internals.sql` - NEW: Statistics analysis
-9. `sql/08_analyze_query_plans.sql` - NEW: Detailed EXPLAIN
+**Benchmark Directories**:
+- `benchmarks/retail_sales/` - Original comprehensive benchmark (200M rows, 2-4 hrs)
+- `benchmarks/timeseries_iot/` - Fast iteration with validation (10M rows, 2-5 min)
+- `benchmarks/financial_trading/` - High-cardinality testing (10M rows, 4-8 min)
+
+**Retail Sales Execution Scripts** (In Order):
+1. `benchmarks/retail_sales/sql/01_setup_schema.sql` - Schema creation
+2. `benchmarks/retail_sales/sql/02_create_variants.sql` - 4 variants (OPTIMIZED)
+3. `benchmarks/retail_sales/sql/03_generate_data_SMALL.sql` - 1M rows for testing
+4. `benchmarks/retail_sales/sql/04a_validate_clustering_config.sql` - Memory validation
+5. `benchmarks/retail_sales/sql/04_optimize_pax.sql` - Sets maintenance_work_mem=2GB
+6. `benchmarks/retail_sales/sql/05_test_sample_queries.sql` - Quick 2-query test
+7. `benchmarks/retail_sales/sql/06_collect_metrics.sql` - Storage & performance
+8. `benchmarks/retail_sales/sql/07_inspect_pax_internals.sql` - Statistics analysis
+9. `benchmarks/retail_sales/sql/08_analyze_query_plans.sql` - Detailed EXPLAIN
 
 **Analysis & Results**:
-- `results/4-variant-test-10M-rows.md` - Comprehensive test results (15 pages)
-- `results/QUICK_SUMMARY.md` - Executive summary
-- `results/test-config-2025-10-29.log` - Reproduction guide
+- `benchmarks/retail_sales/results/4-variant-test-10M-rows.md` - Comprehensive test results
+- `benchmarks/retail_sales/results/QUICK_SUMMARY.md` - Executive summary
+- `benchmarks/retail_sales/results/test-config-2025-10-29.log` - Reproduction guide
 
 **Documentation Map**:
 - **README.md** - Start here (main overview)
@@ -692,6 +757,7 @@ pip3 install matplotlib seaborn
 - **docs/CONFIGURATION_GUIDE.md** - PAX tuning (UPDATED with memory section)
 - **docs/METHODOLOGY.md** - Scientific approach
 - **docs/REPORTING.md** - Results analysis
+- **docs/diagrams/** - PAX architecture diagrams (3 PNGs)
 - **docs/archive/** - Historical meta-documentation
 
 ---
@@ -783,9 +849,11 @@ FROM generate_series(1, 500000000) gs  -- 500M rows
 **Status**: Production-ready with correct configuration, scientifically rigorous
 
 **Common User Intent**:
-- "Run the benchmark" → `./scripts/run_full_benchmark.sh`
+- "Run a quick test" → `cd benchmarks/timeseries_iot && ./scripts/run_iot_benchmark.sh` (2-5 min)
+- "Run comprehensive test" → `cd benchmarks/retail_sales && ./scripts/run_full_benchmark.sh` (2-4 hrs)
+- "Test high-cardinality" → `cd benchmarks/financial_trading && ./scripts/run_trading_benchmark.sh` (4-8 min)
 - "Understand PAX" → Read `docs/TECHNICAL_ARCHITECTURE.md`
-- "Configure PAX" → Read `docs/CONFIGURATION_GUIDE.md`
+- "Configure PAX" → Read `docs/CONFIGURATION_GUIDE.md` + `benchmarks/README.md`
 - "Interpret results" → Read `docs/REPORTING.md`
 - "Setup from scratch" → Read `docs/INSTALLATION.md`
 
