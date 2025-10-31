@@ -1,0 +1,2 @@
+# Dependencies for streaming benchmark Python scripts
+rich>=13.0.0
