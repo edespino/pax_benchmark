@@ -105,9 +105,11 @@ pax_benchmark/
 │   └── timeseries_iot_streaming/  # Streaming INSERT benchmark (50M rows, 20-55 min)
 │       ├── README.md
 │       ├── scripts/
-│       │   ├── run_streaming_benchmark.sh    # Master (both phases)
-│       │   ├── run_phase1_noindex.sh         # Phase 1 only (20 min)
-│       │   └── run_phase2_withindex.sh       # Phase 2 only (30 min)
+│       │   ├── run_streaming_benchmark.py    # Python (recommended - real-time progress)
+│       │   ├── run_streaming_benchmark.sh    # Bash master (both phases)
+│       │   ├── run_phase1_noindex.sh         # Bash Phase 1 only (20 min)
+│       │   ├── run_phase2_withindex.sh       # Bash Phase 2 only (30 min)
+│       │   └── requirements.txt              # Python dependencies (rich>=13.0.0)
 │       ├── sql/ (12 files with validation framework)
 │       ├── docs/BENCHMARK_RESULTS_2025-10-30.md
 │       └── results/
@@ -159,6 +161,13 @@ cd benchmarks/ecommerce_clickstream
 **INSERT throughput / Streaming workloads** (20-55 min):
 ```bash
 cd benchmarks/timeseries_iot_streaming
+
+# Python version (recommended - real-time progress)
+pip3 install -r scripts/requirements.txt  # First time only
+./scripts/run_streaming_benchmark.py      # Both phases (50 min, interactive)
+./scripts/run_streaming_benchmark.py --phase 1  # Phase 1 only (20 min)
+
+# Bash version (alternative - silent execution)
 ./scripts/run_phase1_noindex.sh        # Phase 1 only (20 min)
 ./scripts/run_streaming_benchmark.sh   # Both phases (50 min)
 ```

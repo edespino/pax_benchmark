@@ -275,22 +275,45 @@ Continuous write rate >250K rows/sec?
 
 ## Execution
 
-### Quick Start (Phase 1 Only - 20 minutes):
+### Python Version (Recommended - Real-time Progress)
+
+**Features**: Live progress bars, batch-level updates, better error handling, professional UI
+
 ```bash
 cd benchmarks/timeseries_iot_streaming
-chmod +x scripts/*.sh
-./scripts/run_phase1_noindex.sh
+
+# Install dependencies (first time only)
+pip3 install -r scripts/requirements.txt
+
+# Full benchmark (both phases - 50 minutes, interactive)
+./scripts/run_streaming_benchmark.py
+
+# Phase 1 only (20 minutes)
+./scripts/run_streaming_benchmark.py --phase 1
+
+# Non-interactive (CI/CD friendly)
+./scripts/run_streaming_benchmark.py --no-interactive
+
+# Verbose output for debugging
+./scripts/run_streaming_benchmark.py --verbose
 ```
 
-### Full Benchmark (Both Phases - 50 minutes):
+### Bash Version (Alternative - Silent Execution)
+
+**Features**: Simple, no dependencies, but no real-time progress visibility
+
 ```bash
+# Full benchmark (both phases - 50 minutes)
 ./scripts/run_streaming_benchmark.sh
-```
 
-### Phase 2 Only (30 minutes):
-```bash
+# Phase 1 only (20 minutes)
+./scripts/run_phase1_noindex.sh
+
+# Phase 2 only (30 minutes)
 ./scripts/run_phase2_withindex.sh
 ```
+
+**Recommendation**: Use Python version for interactive testing, bash for automated CI/CD pipelines.
 
 ---
 
@@ -337,26 +360,46 @@ cat results/run_YYYYMMDD_HHMMSS/09_queries_phase1.log
 
 ---
 
-## Future Enhancements (Phase 2: Hybrid Python)
+## Implementation Details
+
+### Python Version (October 2025)
+
+The Python rewrite provides significant UX improvements over the bash-only approach:
+
+**Architecture**:
+- **Background thread monitoring**: Parses RAISE NOTICE messages from PostgreSQL logs in real-time
+- **Progress bars**: Rich library provides professional progress UI with elapsed time and ETA
+- **Subprocess + psql**: Maintains compatibility with existing SQL files (no database driver dependency)
+- **Regex parsing**: Handles both Phase 1 and Phase 2 log format differences
+
+**Key Features**:
+```python
+# Real-time batch tracking (updates every 10 batches)
+[Batch 150/500] (100,000 rows, 15.0M total) ━━━━━━━━━━━━━━━━━━━━━ 30% 0:12:45 < 0:29:30
+```
+
+**Dependencies**:
+- `rich>=13.0.0` (only external dependency for progress bars and styled console)
+
+**Benefits**:
+- See exactly which batch is running (vs 15-20 minute silent execution)
+- Identify stuck batches immediately
+- Better error messages with context
+- Structured logging to both console and file
+
+### Future Enhancements
 
 Planned improvements for next version:
 
-1. **Python-based orchestration** (Option C Hybrid):
-   ```python
-   # Python controls batches, PostgreSQL generates data
-   for batch in range(500):
-       cursor.execute("SELECT * FROM generate_cdr_batch(...)")
-       # Real-time progress bar
-       progress.update(batch, throughput_rows_sec)
-   ```
+1. **Pause/resume capability**: Checkpoint every 100 batches with resume support
 
-2. **Pause/resume capability**: Checkpoint every 100 batches
+2. **Live throughput dashboard**: Per-variant throughput tracking in progress bar
 
-3. **Real-time monitoring dashboard**: Live throughput charts
+3. **Variable workload patterns**: CLI options to customize traffic profiles
 
-4. **Variable workload patterns**: Allow custom traffic profiles
+4. **UPDATE/DELETE testing**: Test mutable streaming data scenarios
 
-5. **UPDATE/DELETE testing**: Test mutable streaming data
+5. **Multi-run comparison**: Automatically compare multiple benchmark runs
 
 ---
 
@@ -392,5 +435,7 @@ This benchmark answers the critical production question:
 
 ---
 
-**Status**: Phase 1 implementation complete (PL/pgSQL)
-**Next**: Phase 2 migration to Python hybrid (Option C)
+**Status**: Complete - Bash + Python implementations available (October 2025)
+- ✅ Bash version: Simple, no dependencies, stable
+- ✅ Python version: Real-time progress, better UX, recommended for interactive use
+**Dependency**: `rich>=13.0.0` (Python version only)

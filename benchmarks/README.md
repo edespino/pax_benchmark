@@ -140,6 +140,13 @@ cd benchmarks/ecommerce_clickstream
 **Run it**:
 ```bash
 cd benchmarks/timeseries_iot_streaming
+
+# Python (recommended - real-time progress)
+pip3 install -r scripts/requirements.txt  # First time
+./scripts/run_streaming_benchmark.py      # Both phases (50 min)
+./scripts/run_streaming_benchmark.py --phase 1  # Phase 1 only (20 min)
+
+# Bash (alternative)
 ./scripts/run_phase1_noindex.sh        # Phase 1: No indexes (20 min)
 ./scripts/run_phase2_withindex.sh      # Phase 2: With indexes (30 min)
 ./scripts/run_streaming_benchmark.sh   # Both phases (50 min)
