@@ -8,6 +8,11 @@
 
 set -e  # Exit on error
 
+# Detect and change to correct directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BENCHMARK_DIR="$(dirname "$SCRIPT_DIR")"
+cd "$BENCHMARK_DIR"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -59,8 +64,9 @@ run_phase() {
     log "Phase ${phase_num}: ${phase_name}..."
 
     local start=$(date +%s)
-    ${PSQL_CMD} -f "${sql_file}" > "${log_file}" 2>&1
-    local exit_code=$?
+    # Use tee to show output on screen AND save to log file
+    ${PSQL_CMD} -f "${sql_file}" 2>&1 | tee "${log_file}"
+    local exit_code=${PIPESTATUS[0]}
     local end=$(date +%s)
     local duration=$((end - start))
 
@@ -145,8 +151,8 @@ info "Expected runtime: 15-20 minutes"
 info "Progress will be shown every 10 batches"
 echo ""
 
-run_phase 6 "Streaming INSERTs - Phase 1 (NO INDEXES)" \
-    "sql/06_streaming_inserts_noindex.sql" \
+run_phase 6 "Streaming INSERTs - Phase 1 (NO INDEXES) - PROCEDURE" \
+    "sql/06b_streaming_inserts_noindex_procedure.sql" \
     "${RESULTS_DIR}/06_streaming_phase1.log" || exit 1
 
 # =====================================================

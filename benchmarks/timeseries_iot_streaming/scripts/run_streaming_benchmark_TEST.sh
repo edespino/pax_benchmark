@@ -1,12 +1,21 @@
 #!/bin/bash
 #
-# Streaming INSERT Benchmark - Master Script
-# Tests INSERT throughput for continuous batch loading scenarios
-# Simulates realistic telecom/IoT traffic patterns
+# Streaming INSERT Benchmark - QUICK TEST VERSION
+# Tests INSERT throughput with 10 batches per phase (instead of 500)
+# Runtime: ~5-10 minutes total (vs 3.5-4.5 hours for full benchmark)
 #
-# Phases:
-#   Phase 1 (No indexes): Pure INSERT speed
-#   Phase 2 (With indexes): Realistic production scenario
+# This script demonstrates the COMPLETE workflow:
+#   - Validation framework
+#   - Cardinality analysis
+#   - Configuration generation
+#   - Table creation
+#   - Phase 1: 10 batches, no indexes
+#   - PAX optimization
+#   - Query performance tests
+#   - Metrics collection
+#   - Validation
+#   - Phase 2: 10 batches, with indexes (5 per variant)
+#   - All reporting scripts
 #
 
 set -e  # Exit on error
@@ -14,7 +23,12 @@ set -e  # Exit on error
 # Detect and change to correct directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCHMARK_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Change to benchmark directory (scripts run from there)
 cd "$BENCHMARK_DIR"
+
+echo "Working directory: $(pwd)"
+echo ""
 
 # Colors for output
 RED='\033[0;31m'
@@ -25,7 +39,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 PSQL_CMD="psql postgres"
-RESULTS_DIR="results/run_$(date +%Y%m%d_%H%M%S)"
+RESULTS_DIR="results/test_$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="${RESULTS_DIR}/benchmark.log"
 TIMING_FILE="${RESULTS_DIR}/timing.txt"
 
@@ -90,20 +104,21 @@ run_phase() {
 # Header
 echo ""
 echo "==========================================================="
-echo "  Streaming INSERT Benchmark - PAX vs AO/AOCO"
+echo "  Streaming INSERT Benchmark - QUICK TEST (10 batches)"
 echo "==========================================================="
 echo ""
 echo "Test Scenario:"
-echo "  📊 Dataset: 50M rows (500 batches)"
-echo "  🔄 Traffic: Realistic 24-hour telecom pattern"
-echo "  📈 Batch sizes: 10K (small), 100K (medium), 500K (large bursts)"
-echo "  ⏱️  Runtime: ~3.5-4.5 hours (Phase 1: 15-20 min, Phase 2: 2.5-3 hrs)"
+echo "  📊 Dataset: 1M rows per phase (10 batches × ~100K rows)"
+echo "  🔄 Traffic: Simplified pattern"
+echo "  📈 Batch size: Fixed 100K per batch"
+echo "  ⏱️  Runtime: ~5-10 minutes (vs 3.5-4.5 hrs for full)"
 echo ""
-echo "Key Features:"
-echo "  ✅ Two-phase testing (with/without indexes)"
-echo "  ✅ Validation-first design (prevents misconfiguration)"
-echo "  ✅ Per-batch metrics (500 measurements per variant)"
-echo "  ✅ Storage growth tracking"
+echo "What this tests:"
+echo "  ✅ Complete workflow (validation → inserts → queries → metrics)"
+echo "  ✅ Phase 1: Pure INSERT speed (no indexes)"
+echo "  ✅ Phase 2: INSERT with index maintenance"
+echo "  ✅ All reporting and validation scripts"
+echo "  ✅ PROCEDURE with per-batch commits"
 echo ""
 echo "Results will be saved to: ${RESULTS_DIR}"
 echo ""
@@ -163,20 +178,20 @@ run_phase 4 "Create Storage Variants (AO/AOCO/PAX/PAX-no-cluster)" \
     "${RESULTS_DIR}/04_create_variants.log" || exit 1
 
 # =====================================================
-# PHASE 1: STREAMING INSERTS (NO INDEXES)
+# PHASE 1: STREAMING INSERTS (NO INDEXES) - 10 BATCHES
 # =====================================================
 
 echo ""
 echo "==========================================================="
-echo "  PHASE 1: Streaming INSERTs WITHOUT Indexes"
+echo "  PHASE 1: Streaming INSERTs WITHOUT Indexes (10 batches)"
 echo "==========================================================="
 echo ""
 info "This tests pure INSERT throughput without index maintenance"
-info "Expected runtime: 15-20 minutes"
+info "Expected runtime: 2-5 minutes (10 batches × 100K rows)"
 echo ""
 
-run_phase "6a" "Streaming INSERTs - Phase 1 (NO INDEXES) - PROCEDURE" \
-    "sql/06b_streaming_inserts_noindex_procedure.sql" \
+run_phase "6a" "Streaming INSERTs - Phase 1 TEST (NO INDEXES)" \
+    "sql/06c_streaming_inserts_noindex_procedure_TEST.sql" \
     "${RESULTS_DIR}/06_streaming_phase1.log" || exit 1
 
 # =====================================================
@@ -238,55 +253,21 @@ echo "==========================================================="
 echo "  PHASE 1 COMPLETE!"
 echo "==========================================================="
 echo ""
-
-# =====================================================
-# Ask user if they want to continue with Phase 2
-# =====================================================
-
-info "Phase 1 (no indexes) complete!"
-info "Phase 2 will test INSERT performance WITH indexes (realistic production)"
-info "Phase 2 runtime: ~2.5-3 hours (per-batch commits with index maintenance)"
-echo ""
-read -p "Continue with Phase 2 (with indexes)? [Y/n] " -n 1 -r
+success "Phase 1 (10 batches, no indexes) completed successfully"
+info "Proceeding with Phase 2 (10 batches, with indexes)..."
 echo ""
 
-if [[ ! $REPLY =~ ^[Yy]$ ]] && [[ -n $REPLY ]]; then
-    warn "Skipping Phase 2"
-    warn "To run Phase 2 later, use: ./scripts/run_phase2_withindex.sh"
-    echo ""
-
-    # Final summary (Phase 1 only)
-    BENCHMARK_END=$(date +%s)
-    TOTAL_DURATION=$((BENCHMARK_END - BENCHMARK_START))
-
-    echo ""
-    echo "==========================================================="
-    echo "  BENCHMARK COMPLETE (Phase 1 only)"
-    echo "==========================================================="
-    echo ""
-    echo "Total runtime: $((TOTAL_DURATION / 60))m $((TOTAL_DURATION % 60))s"
-    echo ""
-    echo "Results saved to: ${RESULTS_DIR}"
-    echo ""
-    echo "Key files:"
-    echo "  • ${RESULTS_DIR}/10_metrics_phase1.txt - Performance metrics"
-    echo "  • ${RESULTS_DIR}/11_validation_phase1.txt - Validation results"
-    echo "  • ${TIMING_FILE} - Phase timings"
-    echo ""
-    exit 0
-fi
-
 # =====================================================
-# PHASE 2: STREAMING INSERTS (WITH INDEXES)
+# PHASE 2: STREAMING INSERTS (WITH INDEXES) - 10 BATCHES
 # =====================================================
 
 echo ""
 echo "==========================================================="
-echo "  PHASE 2: Streaming INSERTs WITH Indexes"
+echo "  PHASE 2: Streaming INSERTs WITH Indexes (10 batches)"
 echo "==========================================================="
 echo ""
 info "This tests INSERT throughput with index maintenance overhead"
-info "Expected runtime: 2.5-3 hours (PROCEDURE with per-batch commits)"
+info "Expected runtime: 2-5 minutes (10 batches × 100K rows)"
 echo ""
 
 # Drop existing tables and recreate with indexes
@@ -300,9 +281,9 @@ run_phase 5 "Create Indexes (5 per variant, 20 total)" \
     "sql/05_create_indexes.sql" \
     "${RESULTS_DIR}/05_create_indexes.log" || exit 1
 
-# Run streaming INSERTs with indexes
-run_phase "6b" "Streaming INSERTs - Phase 2 (WITH INDEXES) - PROCEDURE" \
-    "sql/07b_streaming_inserts_withindex_procedure.sql" \
+# Run streaming INSERTs with indexes (10 batches)
+run_phase "6b" "Streaming INSERTs - Phase 2 TEST (WITH INDEXES)" \
+    "sql/07c_streaming_inserts_withindex_procedure_TEST.sql" \
     "${RESULTS_DIR}/07_streaming_phase2.log" || exit 1
 
 # Re-cluster PAX after Phase 2
@@ -344,7 +325,7 @@ TOTAL_DURATION=$((BENCHMARK_END - BENCHMARK_START))
 
 echo ""
 echo "==========================================================="
-echo "  BENCHMARK COMPLETE (Both Phases)"
+echo "  QUICK TEST COMPLETE (Both Phases)"
 echo "==========================================================="
 echo ""
 echo "Total runtime: $((TOTAL_DURATION / 60))m $((TOTAL_DURATION % 60))s"
@@ -359,7 +340,20 @@ echo "  • ${RESULTS_DIR}/10_metrics_phase1.txt - Phase 1 (no indexes)"
 echo "  • ${RESULTS_DIR}/10_metrics_phase2.txt - Phase 2 (with indexes + comparison)"
 echo "  • ${RESULTS_DIR}/11_validation_phase1.txt - Phase 1 validation"
 echo "  • ${RESULTS_DIR}/11_validation_phase2.txt - Phase 2 validation"
+echo "  • ${RESULTS_DIR}/02_cardinality_analysis.txt - Bloom filter analysis"
+echo "  • ${RESULTS_DIR}/03_generated_config.sql - PAX configuration"
 echo "  • ${TIMING_FILE} - Phase timings"
 echo ""
-echo "SUCCESS! Benchmark completed without errors."
+echo "What was tested:"
+echo "  ✅ Complete workflow (14 phases)"
+echo "  ✅ Validation framework (cardinality analysis, config generation)"
+echo "  ✅ Phase 1: 1M rows, no indexes"
+echo "  ✅ Phase 2: 1M rows, 20 indexes"
+echo "  ✅ PROCEDURE with per-batch commits (resumable)"
+echo "  ✅ All reporting and validation scripts"
+echo ""
+echo "To run full 500-batch benchmark (~3.5-4.5 hours):"
+echo "  ./scripts/run_streaming_benchmark.sh"
+echo ""
+echo "SUCCESS! Quick test completed without errors."
 echo ""

@@ -74,8 +74,8 @@ BEGIN
 
     RAISE NOTICE 'Storage sizes:';
     RAISE NOTICE '  AOCO (baseline): %', pg_size_pretty(v_aoco_size);
-    RAISE NOTICE '  PAX-no-cluster: % (%.2fx vs AOCO)', pg_size_pretty(v_pax_nc_size), v_nc_bloat_ratio;
-    RAISE NOTICE '  PAX-clustered: % (%.2fx vs no-cluster)', pg_size_pretty(v_pax_size), v_clustered_bloat_ratio;
+    RAISE NOTICE '  PAX-no-cluster: % (%x vs AOCO)', pg_size_pretty(v_pax_nc_size), ROUND(v_nc_bloat_ratio, 2);
+    RAISE NOTICE '  PAX-clustered: % (%x vs no-cluster)', pg_size_pretty(v_pax_size), ROUND(v_clustered_bloat_ratio, 2);
     RAISE NOTICE '';
 
     -- Check PAX no-cluster vs AOCO
@@ -110,25 +110,38 @@ END $$;
 
 DO $$
 DECLARE
+    v_table_name TEXT;
     v_ao_throughput NUMERIC;
     v_pax_throughput NUMERIC;
     v_ratio NUMERIC;
 BEGIN
-    -- Get Phase 1 throughput (no indexes)
-    SELECT AVG(throughput_rows_sec) INTO v_ao_throughput
-    FROM cdr.streaming_metrics_phase1
-    WHERE variant = 'AO';
+    -- Check which table exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'cdr' AND table_name = 'streaming_metrics_phase1_test') THEN
+        v_table_name := 'streaming_metrics_phase1_test';
+        RAISE NOTICE 'Using Phase 1 metrics from TEST run';
+    ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'cdr' AND table_name = 'streaming_metrics_phase1') THEN
+        v_table_name := 'streaming_metrics_phase1';
+        RAISE NOTICE 'Using Phase 1 metrics from PRODUCTION run';
+    ELSE
+        RAISE NOTICE 'Phase 1 metrics not found (table does not exist)';
+        RAISE NOTICE 'Run 06_streaming_inserts_noindex.sql first';
+        RETURN;
+    END IF;
 
-    SELECT AVG(throughput_rows_sec) INTO v_pax_throughput
-    FROM cdr.streaming_metrics_phase1
-    WHERE variant = 'PAX';
+    -- Get Phase 1 throughput (no indexes) using dynamic SQL
+    EXECUTE format('SELECT AVG(throughput_rows_sec) FROM cdr.%I WHERE variant = ''AO''', v_table_name)
+        INTO v_ao_throughput;
+
+    EXECUTE format('SELECT AVG(throughput_rows_sec) FROM cdr.%I WHERE variant = ''PAX''', v_table_name)
+        INTO v_pax_throughput;
 
     v_ratio := v_pax_throughput / v_ao_throughput;
 
+    RAISE NOTICE '';
     RAISE NOTICE 'Phase 1 (no indexes) throughput:';
     RAISE NOTICE '  AO: % rows/sec', ROUND(v_ao_throughput, 0);
     RAISE NOTICE '  PAX: % rows/sec', ROUND(v_pax_throughput, 0);
-    RAISE NOTICE '  Ratio: PAX is %.1f%% of AO speed', v_ratio * 100;
+    RAISE NOTICE '  Ratio: PAX is %%% of AO speed', ROUND(v_ratio * 100, 1);
     RAISE NOTICE '';
 
     IF v_ratio >= 0.50 THEN

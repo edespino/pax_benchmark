@@ -9,6 +9,11 @@
 
 set -e  # Exit on error
 
+# Detect and change to correct directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BENCHMARK_DIR="$(dirname "$SCRIPT_DIR")"
+cd "$BENCHMARK_DIR"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -60,8 +65,9 @@ run_phase() {
     log "Phase ${phase_num}: ${phase_name}..."
 
     local start=$(date +%s)
-    ${PSQL_CMD} -f "${sql_file}" > "${log_file}" 2>&1
-    local exit_code=$?
+    # Use tee to show output on screen AND save to log file
+    ${PSQL_CMD} -f "${sql_file}" 2>&1 | tee "${log_file}"
+    local exit_code=${PIPESTATUS[0]}
     local end=$(date +%s)
     local duration=$((end - start))
 
@@ -90,7 +96,7 @@ echo "  📊 Dataset: 50M rows (500 batches)"
 echo "  🔄 Traffic: Realistic 24-hour telecom pattern"
 echo "  📈 Batch sizes: 10K (small), 100K (medium), 500K (large bursts)"
 echo "  📇 Indexes: 5 per variant (20 total)"
-echo "  ⏱️  Runtime: ~30-35 minutes"
+echo "  ⏱️  Runtime: ~2.5-3 hours (PROCEDURE with per-batch commits)"
 echo ""
 echo "What this tests:"
 echo "  ✅ INSERT throughput WITH index maintenance overhead"
@@ -152,12 +158,12 @@ echo "==========================================================="
 echo ""
 info "This will INSERT 50M rows in 500 batches (per variant)"
 info "WITH index maintenance on every INSERT"
-info "Expected runtime: 20-30 minutes (slower than Phase 1)"
+info "Expected runtime: 2.5-3 hours (PROCEDURE with per-batch commits)"
 info "Progress will be shown every 10 batches"
 echo ""
 
-run_phase 7 "Streaming INSERTs - Phase 2 (WITH INDEXES)" \
-    "sql/07_streaming_inserts_withindex.sql" \
+run_phase 7 "Streaming INSERTs - Phase 2 (WITH INDEXES) - PROCEDURE" \
+    "sql/07b_streaming_inserts_withindex_procedure.sql" \
     "${RESULTS_DIR}/07_streaming_phase2.log" || exit 1
 
 # =====================================================
