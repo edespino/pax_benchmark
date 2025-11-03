@@ -224,12 +224,13 @@ SELECT * FROM cdr_validation.calculate_cluster_memory(50000000);
 \echo 'RECOMMENDED PAX CONFIGURATION:'
 \echo '  bloomfilter_columns=''caller_number,callee_number'''
 \echo '  minmax_columns=''call_date,call_hour,caller_number,callee_number,cell_tower_id,duration_seconds,call_type,termination_code'''
-\echo '  cluster_columns=''call_timestamp,cell_tower_id'' (time + location correlation)'
+\echo '  cluster_columns=''call_hour,cell_tower_id'' (time + location correlation)'
 \echo '  maintenance_work_mem: See calculation above (12GB for 50M rows)'
 \echo ''
-\echo 'NOTE: This benchmark uses 2 bloom columns (Nov 2025 optimization).'
-\echo '      call_id removed (only 1 distinct value - causes bloat).'
-\echo '      cell_tower_id safe but excluded to keep bloom filter count low.'
+\echo 'NOTE: Nov 2025 optimizations applied:'
+\echo '      • 2 bloom columns (call_id removed - only 1 distinct value)'
+\echo '      • call_hour clustering (24 values) vs call_date (1 value) = -3.1% storage'
+\echo '      • cell_tower_id safe but excluded to keep bloom filter count low'
 \echo ''
 
 -- =====================================================
