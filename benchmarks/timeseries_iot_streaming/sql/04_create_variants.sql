@@ -118,12 +118,12 @@ CREATE TABLE cdr.cdr_pax (
     compresslevel=5,
 
     -- Bloom filters: VALIDATED (cardinality >= 1000)
-    -- Limited to 3 columns per October 2025 lessons
-    -- call_id: ~1M unique ✅
-    -- caller_number: ~1M unique ✅
-    -- callee_number: ~1M unique ✅
-    -- cell_tower_id: ~10K unique (excluded - already have 3)
-    bloomfilter_columns='call_id,caller_number,callee_number',
+    -- Limited to 2-3 columns per October 2025 lessons
+    -- call_id: 1 unique ❌ (REMOVED - causes storage bloat)
+    -- caller_number: ~2M unique ✅
+    -- callee_number: ~2M unique ✅
+    -- cell_tower_id: ~10K unique (could add if needed)
+    bloomfilter_columns='caller_number,callee_number',
 
     -- MinMax statistics: Low overhead, use liberally
     minmax_columns='call_date,call_hour,caller_number,callee_number,cell_tower_id,duration_seconds,call_type,termination_code,billing_amount',
@@ -174,8 +174,8 @@ CREATE TABLE cdr.cdr_pax_nocluster (
     compresstype='zstd',
     compresslevel=5,
 
-    -- Same bloom/minmax as cdr_pax
-    bloomfilter_columns='call_id,caller_number,callee_number',
+    -- Same bloom/minmax as cdr_pax (call_id removed - only 1 distinct value)
+    bloomfilter_columns='caller_number,callee_number',
     minmax_columns='call_date,call_hour,caller_number,callee_number,cell_tower_id,duration_seconds,call_type,termination_code,billing_amount',
 
     -- NO clustering (control group)
@@ -203,9 +203,9 @@ CREATE TABLE cdr.cdr_pax_nocluster (
 \echo '  4. cdr.cdr_pax_nocluster (PAX without clustering)'
 \echo ''
 \echo 'PAX Configuration:'
-\echo '  ✅ Bloom filters: 3 columns (call_id, caller_number, callee_number)'
+\echo '  ✅ Bloom filters: 2 columns (caller_number, callee_number) - high cardinality'
 \echo '  ✅ MinMax: 9 columns (comprehensive coverage)'
-\echo '  ✅ Z-order clustering: call_timestamp + cell_tower_id'
+\echo '  ✅ Z-order clustering: call_date + cell_tower_id'
 \echo '  ✅ All validated via cardinality analysis (Phase 2)'
 \echo ''
 \echo 'Next: Phase 5 - Create indexes (for Phase 2 testing)'
