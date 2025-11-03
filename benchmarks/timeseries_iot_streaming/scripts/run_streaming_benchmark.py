@@ -13,6 +13,7 @@ Usage:
   ./run_streaming_benchmark.py                    # Run both phases
   ./run_streaming_benchmark.py --phase 1          # Phase 1 only
   ./run_streaming_benchmark.py --no-interactive   # Skip prompts
+  ./run_streaming_benchmark.py --optimized        # Use Track A optimizations (30-40% faster)
 """
 
 import argparse
@@ -83,12 +84,14 @@ class StreamingBenchmark:
         phase: str,
         no_interactive: bool,
         verbose: bool,
+        optimized: bool = False,
     ):
         self.psql_cmd = psql_cmd
         self.results_dir = results_dir
         self.phase = phase
         self.no_interactive = no_interactive
         self.verbose = verbose
+        self.optimized = optimized
         self.timer = PhaseTimer()
         self.sql_dir = Path(__file__).parent.parent / "sql"
 
@@ -269,20 +272,44 @@ class StreamingBenchmark:
     def print_header(self):
         """Print benchmark header"""
         console.print()
+
+        # Build batch size description based on optimized flag
+        batch_sizes = "10K (small), 100K (medium)" if self.optimized else "10K (small), 100K (medium), 500K (large bursts)"
+        runtime = "~35-45 minutes (optimized)" if self.optimized else "~40-55 minutes"
+        mode_indicator = "⚡ OPTIMIZED MODE" if self.optimized else ""
+
+        # Build key features list
+        key_features = [
+            "Two-phase testing (with/without indexes)",
+            "Validation-first design (prevents misconfiguration)",
+            "Per-batch metrics (500 measurements per variant)",
+            "Storage growth tracking"
+        ]
+
+        if self.optimized:
+            key_features.extend([
+                "⚡ Batch size cap (no 500K bursts)",
+                "⚡ ANALYZE tuning (every 250 batches)",
+                "⚡ CSV metrics export"
+            ])
+
+        features_text = "\n".join(f"  • {f}" for f in key_features)
+
+        title = "[bold cyan]Streaming INSERT Benchmark - PAX vs AO/AOCO[/bold cyan]"
+        if self.optimized:
+            title += "\n[bold yellow]⚡ OPTIMIZED MODE ⚡[/bold yellow]"
+
         console.print(
             Panel(
-                "[bold]Test Scenario:[/bold]\n"
-                "  Dataset: 50M rows (500 batches)\n"
-                "  Traffic: Realistic 24-hour telecom pattern\n"
-                "  Batch sizes: 10K (small), 100K (medium), 500K (large bursts)\n"
-                f"  Runtime: ~40-55 minutes (Phase 1 + Phase 2)\n\n"
-                "[bold]Key Features:[/bold]\n"
-                "  • Two-phase testing (with/without indexes)\n"
-                "  • Validation-first design (prevents misconfiguration)\n"
-                "  • Per-batch metrics (500 measurements per variant)\n"
-                "  • Storage growth tracking",
-                title="[bold cyan]Streaming INSERT Benchmark - PAX vs AO/AOCO[/bold cyan]",
-                border_style="cyan",
+                f"[bold]Test Scenario:[/bold]\n"
+                f"  Dataset: 50M rows (500 batches)\n"
+                f"  Traffic: Realistic 24-hour telecom pattern\n"
+                f"  Batch sizes: {batch_sizes}\n"
+                f"  Runtime: {runtime} (Phase 1 + Phase 2)\n\n"
+                f"[bold]Key Features:[/bold]\n"
+                f"{features_text}",
+                title=title,
+                border_style="yellow" if self.optimized else "cyan",
             )
         )
         console.print()
@@ -373,6 +400,14 @@ class StreamingBenchmark:
         # Phase 6a: Streaming INSERTs with progress monitoring
         log_file = self.results_dir / "06_streaming_phase1.log"
 
+        # Choose SQL file based on optimized flag
+        if self.optimized:
+            sql_file = self.sql_dir / "06a_streaming_inserts_noindex_OPTIMIZED.sql"
+            phase_label = "Streaming INSERTs - Phase 1 (NO INDEXES) - OPTIMIZED"
+        else:
+            sql_file = self.sql_dir / "06_streaming_inserts_noindex.sql"
+            phase_label = "Streaming INSERTs - Phase 1 (NO INDEXES)"
+
         # Create progress bar
         with Progress(
             SpinnerColumn(),
@@ -383,8 +418,9 @@ class StreamingBenchmark:
             TimeRemainingColumn(),
             console=console,
         ) as progress:
+            task_desc = "[cyan]Streaming INSERTs (Phase 1) ⚡ OPTIMIZED" if self.optimized else "[cyan]Streaming INSERTs (Phase 1)"
             task = progress.add_task(
-                "[cyan]Streaming INSERTs (Phase 1)", total=500, start=True
+                task_desc, total=500, start=True
             )
 
             # Progress callback
@@ -408,8 +444,8 @@ class StreamingBenchmark:
             # Run phase with progress monitoring
             success = self.run_sql_phase(
                 "6a",
-                "Streaming INSERTs - Phase 1 (NO INDEXES)",
-                self.sql_dir / "06_streaming_inserts_noindex.sql",
+                phase_label,
+                sql_file,
                 log_file,
                 show_progress=True,
                 progress_callback=update_progress,
@@ -543,6 +579,14 @@ class StreamingBenchmark:
         # Phase 6b: Streaming INSERTs with indexes (with progress)
         log_file = self.results_dir / "07_streaming_phase2.log"
 
+        # Choose SQL file based on optimized flag
+        if self.optimized:
+            sql_file = self.sql_dir / "07a_streaming_inserts_withindex_OPTIMIZED.sql"
+            phase_label = "Streaming INSERTs - Phase 2 (WITH INDEXES) - OPTIMIZED"
+        else:
+            sql_file = self.sql_dir / "07_streaming_inserts_withindex.sql"
+            phase_label = "Streaming INSERTs - Phase 2 (WITH INDEXES)"
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -552,8 +596,9 @@ class StreamingBenchmark:
             TimeRemainingColumn(),
             console=console,
         ) as progress:
+            task_desc = "[cyan]Streaming INSERTs (Phase 2 - WITH INDEXES) ⚡ OPTIMIZED" if self.optimized else "[cyan]Streaming INSERTs (Phase 2 - WITH INDEXES)"
             task = progress.add_task(
-                "[cyan]Streaming INSERTs (Phase 2 - WITH INDEXES)", total=500
+                task_desc, total=500
             )
 
             def update_progress(event_type, **kwargs):
@@ -575,8 +620,8 @@ class StreamingBenchmark:
 
             success = self.run_sql_phase(
                 "6b",
-                "Streaming INSERTs - Phase 2 (WITH INDEXES)",
-                self.sql_dir / "07_streaming_inserts_withindex.sql",
+                phase_label,
+                sql_file,
                 log_file,
                 show_progress=True,
                 progress_callback=update_progress,
@@ -738,6 +783,8 @@ Examples:
   %(prog)s --phase 1                 # Run Phase 1 only
   %(prog)s --phase 2                 # Run Phase 2 only (requires Phase 1 completed)
   %(prog)s --no-interactive          # Run both phases without prompts
+  %(prog)s --optimized               # Run with Track A optimizations (30-40%% faster)
+  %(prog)s --optimized --phase 2     # Run optimized Phase 2 only
   %(prog)s --verbose                 # Enable verbose logging
         """,
     )
@@ -772,6 +819,12 @@ Examples:
         "--verbose", "-v", action="store_true", help="Enable verbose output"
     )
 
+    parser.add_argument(
+        "--optimized",
+        action="store_true",
+        help="Use optimized configuration (Track A: batch caps, ANALYZE tuning, CSV export)",
+    )
+
     args = parser.parse_args()
 
     # Set logging level
@@ -792,6 +845,7 @@ Examples:
         phase=args.phase,
         no_interactive=args.no_interactive,
         verbose=args.verbose,
+        optimized=args.optimized,
     )
 
     # Run benchmark

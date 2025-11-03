@@ -1,8 +1,10 @@
 # PAX Benchmark - Git Ignore
 
 # Results directory (generated during execution)
+# Ignore raw results but allow dated summary reports for tracking progress
 results/
 !results/.gitkeep
+!results/**/SUMMARY_*.md
 
 # Python bytecode
 __pycache__/
