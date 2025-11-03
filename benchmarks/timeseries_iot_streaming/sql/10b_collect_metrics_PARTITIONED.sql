@@ -4,7 +4,8 @@
 -- Compares Phase 1 (no indexes) vs Phase 2 (with indexes) if available
 --
 -- Partitioned tables: cdr.cdr_*_partitioned (24 partitions each)
--- Note: pg_total_relation_size() automatically includes all child partitions
+-- Note: pg_total_relation_size() on parent returns 0 (expected Greenplum/Cloudberry behavior)
+--       We use pg_partition_tree() to sum leaf partition sizes
 --
 
 \timing on
@@ -35,23 +36,39 @@ SELECT
 FROM (
     SELECT
         'AO' AS variant_name,
-        pg_total_relation_size('cdr.cdr_ao_partitioned') AS table_size,
-        (SELECT pg_total_relation_size('cdr.cdr_aoco_partitioned')) AS aoco_size
+        (SELECT SUM(pg_total_relation_size(relid))
+         FROM pg_partition_tree('cdr.cdr_ao_partitioned')
+         WHERE isleaf = true) AS table_size,
+        (SELECT SUM(pg_total_relation_size(relid))
+         FROM pg_partition_tree('cdr.cdr_aoco_partitioned')
+         WHERE isleaf = true) AS aoco_size
     UNION ALL
     SELECT
         'AOCO',
-        pg_total_relation_size('cdr.cdr_aoco_partitioned'),
-        pg_total_relation_size('cdr.cdr_aoco_partitioned')
+        (SELECT SUM(pg_total_relation_size(relid))
+         FROM pg_partition_tree('cdr.cdr_aoco_partitioned')
+         WHERE isleaf = true),
+        (SELECT SUM(pg_total_relation_size(relid))
+         FROM pg_partition_tree('cdr.cdr_aoco_partitioned')
+         WHERE isleaf = true)
     UNION ALL
     SELECT
         'PAX',
-        pg_total_relation_size('cdr.cdr_pax_partitioned'),
-        pg_total_relation_size('cdr.cdr_aoco_partitioned')
+        (SELECT SUM(pg_total_relation_size(relid))
+         FROM pg_partition_tree('cdr.cdr_pax_partitioned')
+         WHERE isleaf = true),
+        (SELECT SUM(pg_total_relation_size(relid))
+         FROM pg_partition_tree('cdr.cdr_aoco_partitioned')
+         WHERE isleaf = true)
     UNION ALL
     SELECT
         'PAX-no-cluster',
-        pg_total_relation_size('cdr.cdr_pax_nocluster_partitioned'),
-        pg_total_relation_size('cdr.cdr_aoco_partitioned')
+        (SELECT SUM(pg_total_relation_size(relid))
+         FROM pg_partition_tree('cdr.cdr_pax_nocluster_partitioned')
+         WHERE isleaf = true),
+        (SELECT SUM(pg_total_relation_size(relid))
+         FROM pg_partition_tree('cdr.cdr_aoco_partitioned')
+         WHERE isleaf = true)
 ) sizes
 ORDER BY table_size;
 
@@ -66,32 +83,66 @@ ORDER BY table_size;
 \echo ''
 
 -- Estimate raw size based on row count and average row width
--- Note: COUNT(*) on partitioned table automatically aggregates all partitions
-WITH raw_sizes AS (
-    SELECT
-        'AO' AS variant,
-        COUNT(*) AS row_count,
-        pg_total_relation_size('cdr.cdr_ao_partitioned') AS compressed_size
-    FROM cdr.cdr_ao_partitioned
-    UNION ALL
-    SELECT 'AOCO', COUNT(*), pg_total_relation_size('cdr.cdr_aoco_partitioned')
-    FROM cdr.cdr_aoco_partitioned
-    UNION ALL
-    SELECT 'PAX', COUNT(*), pg_total_relation_size('cdr.cdr_pax_partitioned')
-    FROM cdr.cdr_pax_partitioned
-    UNION ALL
-    SELECT 'PAX-no-cluster', COUNT(*), pg_total_relation_size('cdr.cdr_pax_nocluster_partitioned')
-    FROM cdr.cdr_pax_nocluster_partitioned
-)
-SELECT
-    variant,
-    row_count,
-    pg_size_pretty(compressed_size) AS compressed,
-    -- Estimate: ~200 bytes per CDR row (realistic for telecom)
-    pg_size_pretty(row_count * 200) AS estimated_raw,
-    ROUND((row_count * 200)::NUMERIC / compressed_size::NUMERIC, 2) AS compression_ratio
-FROM raw_sizes
-ORDER BY compression_ratio DESC;
+-- Note: pg_total_relation_size() on parent returns 0, use pg_partition_tree()
+-- Note: Avoid UNION ALL with COUNT(*) on distributed tables (MPP limitation)
+DO $$
+DECLARE
+    v_ao_count BIGINT;
+    v_ao_size BIGINT;
+    v_aoco_count BIGINT;
+    v_aoco_size BIGINT;
+    v_pax_count BIGINT;
+    v_pax_size BIGINT;
+    v_pax_nc_count BIGINT;
+    v_pax_nc_size BIGINT;
+    v_raw_estimate BIGINT := 200; -- bytes per CDR row
+BEGIN
+    -- Get row counts
+    SELECT COUNT(*) INTO v_ao_count FROM cdr.cdr_ao_partitioned;
+    SELECT COUNT(*) INTO v_aoco_count FROM cdr.cdr_aoco_partitioned;
+    SELECT COUNT(*) INTO v_pax_count FROM cdr.cdr_pax_partitioned;
+    SELECT COUNT(*) INTO v_pax_nc_count FROM cdr.cdr_pax_nocluster_partitioned;
+
+    -- Get sizes using pg_partition_tree()
+    SELECT SUM(pg_total_relation_size(relid)) INTO v_ao_size
+    FROM pg_partition_tree('cdr.cdr_ao_partitioned') WHERE isleaf = true;
+
+    SELECT SUM(pg_total_relation_size(relid)) INTO v_aoco_size
+    FROM pg_partition_tree('cdr.cdr_aoco_partitioned') WHERE isleaf = true;
+
+    SELECT SUM(pg_total_relation_size(relid)) INTO v_pax_size
+    FROM pg_partition_tree('cdr.cdr_pax_partitioned') WHERE isleaf = true;
+
+    SELECT SUM(pg_total_relation_size(relid)) INTO v_pax_nc_size
+    FROM pg_partition_tree('cdr.cdr_pax_nocluster_partitioned') WHERE isleaf = true;
+
+    -- Display results
+    RAISE NOTICE 'Compression analysis (partitioned variants):';
+    RAISE NOTICE '';
+    RAISE NOTICE 'AO: % rows, compressed: %, estimated raw: %, ratio: %x',
+        v_ao_count,
+        pg_size_pretty(v_ao_size),
+        pg_size_pretty(v_ao_count * v_raw_estimate),
+        ROUND((v_ao_count * v_raw_estimate)::NUMERIC / v_ao_size::NUMERIC, 2);
+
+    RAISE NOTICE 'AOCO: % rows, compressed: %, estimated raw: %, ratio: %x',
+        v_aoco_count,
+        pg_size_pretty(v_aoco_size),
+        pg_size_pretty(v_aoco_count * v_raw_estimate),
+        ROUND((v_aoco_count * v_raw_estimate)::NUMERIC / v_aoco_size::NUMERIC, 2);
+
+    RAISE NOTICE 'PAX: % rows, compressed: %, estimated raw: %, ratio: %x',
+        v_pax_count,
+        pg_size_pretty(v_pax_size),
+        pg_size_pretty(v_pax_count * v_raw_estimate),
+        ROUND((v_pax_count * v_raw_estimate)::NUMERIC / v_pax_size::NUMERIC, 2);
+
+    RAISE NOTICE 'PAX-no-cluster: % rows, compressed: %, estimated raw: %, ratio: %x',
+        v_pax_nc_count,
+        pg_size_pretty(v_pax_nc_size),
+        pg_size_pretty(v_pax_nc_count * v_raw_estimate),
+        ROUND((v_pax_nc_count * v_raw_estimate)::NUMERIC / v_pax_nc_size::NUMERIC, 2);
+END $$;
 
 \echo ''
 

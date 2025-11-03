@@ -10,10 +10,11 @@ Phases:
   Phase 2 (With indexes): Realistic production scenario (~25-35 minutes)
 
 Usage:
-  ./run_streaming_benchmark.py                    # Run both phases
+  ./run_streaming_benchmark.py                    # Run both phases (monolithic)
   ./run_streaming_benchmark.py --phase 1          # Phase 1 only
   ./run_streaming_benchmark.py --no-interactive   # Skip prompts
   ./run_streaming_benchmark.py --optimized        # Use Track A optimizations (30-40% faster)
+  ./run_streaming_benchmark.py --partitioned      # Use Track B partitioned tables (18-35% Phase 2 speedup)
 """
 
 import argparse
@@ -85,6 +86,7 @@ class StreamingBenchmark:
         no_interactive: bool,
         verbose: bool,
         optimized: bool = False,
+        partitioned: bool = False,
     ):
         self.psql_cmd = psql_cmd
         self.results_dir = results_dir
@@ -92,6 +94,7 @@ class StreamingBenchmark:
         self.no_interactive = no_interactive
         self.verbose = verbose
         self.optimized = optimized
+        self.partitioned = partitioned
         self.timer = PhaseTimer()
         self.sql_dir = Path(__file__).parent.parent / "sql"
 
@@ -374,12 +377,16 @@ class StreamingBenchmark:
             return False
 
         # Phase 4: Create Table Variants
-        if not self.run_sql_phase(
-            "4",
-            "Create Storage Variants (AO/AOCO/PAX/PAX-no-cluster)",
-            self.sql_dir / "04_create_variants.sql",
-            self.results_dir / "04_create_variants.log",
-        ):
+        if self.partitioned:
+            phase_label = "Create Partitioned Variants (AO/AOCO/PAX/PAX-no-cluster) - 96 partitions"
+            sql_file = self.sql_dir / "04c_create_variants_PARTITIONED.sql"
+            log_file = self.results_dir / "04c_create_variants_partitioned.log"
+        else:
+            phase_label = "Create Storage Variants (AO/AOCO/PAX/PAX-no-cluster)"
+            sql_file = self.sql_dir / "04_create_variants.sql"
+            log_file = self.results_dir / "04_create_variants.log"
+
+        if not self.run_sql_phase("4", phase_label, sql_file, log_file):
             return False
 
         return True
@@ -400,8 +407,12 @@ class StreamingBenchmark:
         # Phase 6a: Streaming INSERTs with progress monitoring
         log_file = self.results_dir / "06_streaming_phase1.log"
 
-        # Choose SQL file based on optimized flag
-        if self.optimized:
+        # Choose SQL file based on partitioned and optimized flags
+        if self.partitioned:
+            sql_file = self.sql_dir / "06b_streaming_inserts_noindex_PARTITIONED.sql"
+            phase_label = "Streaming INSERTs - Phase 1 (NO INDEXES) - PARTITIONED"
+            log_file = self.results_dir / "06b_streaming_phase1_partitioned.log"
+        elif self.optimized:
             sql_file = self.sql_dir / "06a_streaming_inserts_noindex_OPTIMIZED.sql"
             phase_label = "Streaming INSERTs - Phase 1 (NO INDEXES) - OPTIMIZED"
         else:
@@ -418,7 +429,13 @@ class StreamingBenchmark:
             TimeRemainingColumn(),
             console=console,
         ) as progress:
-            task_desc = "[cyan]Streaming INSERTs (Phase 1) ⚡ OPTIMIZED" if self.optimized else "[cyan]Streaming INSERTs (Phase 1)"
+            if self.partitioned:
+                task_desc = "[cyan]Streaming INSERTs (Phase 1) 🗂️  PARTITIONED"
+            elif self.optimized:
+                task_desc = "[cyan]Streaming INSERTs (Phase 1) ⚡ OPTIMIZED"
+            else:
+                task_desc = "[cyan]Streaming INSERTs (Phase 1)"
+
             task = progress.add_task(
                 task_desc, total=500, start=True
             )
@@ -458,27 +475,32 @@ class StreamingBenchmark:
             progress.update(task, completed=500)
 
         # Phase 8: Optimize PAX (Z-order Clustering)
-        log.info("Applying Z-order clustering to PAX tables...")
-        if not self.run_sql_phase(
-            "8",
-            "PAX Z-order Clustering",
-            self.sql_dir / "08_optimize_pax.sql",
-            self.results_dir / "08_optimize_pax.log",
-        ):
-            return False
+        # Note: Skip for partitioned tables - partitions are already organized by date
+        if not self.partitioned:
+            log.info("Applying Z-order clustering to PAX tables...")
+            if not self.run_sql_phase(
+                "8",
+                "PAX Z-order Clustering",
+                self.sql_dir / "08_optimize_pax.sql",
+                self.results_dir / "08_optimize_pax.log",
+            ):
+                return False
 
-        # Check clustering overhead
-        has_bloat, bloat_count = self.check_validation(
-            self.results_dir / "08_optimize_pax.log", "❌ CRITICAL"
-        )
-        if has_bloat:
-            log.error("CRITICAL STORAGE BLOAT DETECTED after clustering!")
-            log.error(f"Review: {self.results_dir / '08_optimize_pax.log'}")
-            return False
+            # Check clustering overhead
+            has_bloat, bloat_count = self.check_validation(
+                self.results_dir / "08_optimize_pax.log", "❌ CRITICAL"
+            )
+            if has_bloat:
+                log.error("CRITICAL STORAGE BLOAT DETECTED after clustering!")
+                log.error(f"Review: {self.results_dir / '08_optimize_pax.log'}")
+                return False
+            else:
+                console.print("[green]✅ Clustering overhead is acceptable[/green]")
+
+            console.print()
         else:
-            console.print("[green]✅ Clustering overhead is acceptable[/green]")
-
-        console.print()
+            log.info("Skipping Z-order clustering for partitioned tables (already organized by date)")
+            console.print()
 
         # Phase 9: Query Performance Tests
         if not self.run_sql_phase(
@@ -490,30 +512,38 @@ class StreamingBenchmark:
             return False
 
         # Phase 10a: Collect Metrics
-        if not self.run_sql_phase(
-            "10a",
-            "Collect Metrics - Phase 1",
-            self.sql_dir / "10_collect_metrics.sql",
-            self.results_dir / "10_metrics_phase1.txt",
-        ):
+        if self.partitioned:
+            metrics_sql = self.sql_dir / "10b_collect_metrics_PARTITIONED.sql"
+            metrics_log = self.results_dir / "10b_metrics_phase1_partitioned.txt"
+            metrics_label = "Collect Metrics - Phase 1 (PARTITIONED)"
+        else:
+            metrics_sql = self.sql_dir / "10_collect_metrics.sql"
+            metrics_log = self.results_dir / "10_metrics_phase1.txt"
+            metrics_label = "Collect Metrics - Phase 1"
+
+        if not self.run_sql_phase("10a", metrics_label, metrics_sql, metrics_log):
             return False
 
         # Phase 11a: Validate Results
-        if not self.run_sql_phase(
-            "11a",
-            "Validate Results - Phase 1",
-            self.sql_dir / "11_validate_results.sql",
-            self.results_dir / "11_validation_phase1.txt",
-        ):
+        if self.partitioned:
+            validation_sql = self.sql_dir / "11b_validate_results_PARTITIONED.sql"
+            validation_log = self.results_dir / "11b_validation_phase1_partitioned.txt"
+            validation_label = "Validate Results - Phase 1 (PARTITIONED)"
+        else:
+            validation_sql = self.sql_dir / "11_validate_results.sql"
+            validation_log = self.results_dir / "11_validation_phase1.txt"
+            validation_label = "Validate Results - Phase 1"
+
+        if not self.run_sql_phase("11a", validation_label, validation_sql, validation_log):
             return False
 
         # Check validation results
         has_failures, failure_count = self.check_validation(
-            self.results_dir / "11_validation_phase1.txt", "❌ FAILED"
+            validation_log, "❌ FAILED"
         )
         if has_failures:
             log.error(
-                f"Validation failed! Review: {self.results_dir / '11_validation_phase1.txt'}"
+                f"Validation failed! Review: {validation_log}"
             )
             return False
         else:
@@ -559,28 +589,40 @@ class StreamingBenchmark:
 
         # Drop and recreate tables with indexes
         log.warning("Dropping existing tables to recreate with indexes...")
-        if not self.run_sql_phase(
-            "4b",
-            "Recreate Tables for Phase 2",
-            self.sql_dir / "04_create_variants.sql",
-            self.results_dir / "04b_create_variants_phase2.log",
-        ):
+        if self.partitioned:
+            table_sql = self.sql_dir / "04c_create_variants_PARTITIONED.sql"
+            table_log = self.results_dir / "04c_create_variants_phase2.log"
+            table_label = "Recreate Partitioned Tables for Phase 2"
+        else:
+            table_sql = self.sql_dir / "04_create_variants.sql"
+            table_log = self.results_dir / "04b_create_variants_phase2.log"
+            table_label = "Recreate Tables for Phase 2"
+
+        if not self.run_sql_phase("4b", table_label, table_sql, table_log):
             return False
 
         # Phase 5: Create Indexes
-        if not self.run_sql_phase(
-            "5",
-            "Create Indexes (5 per variant, 20 total)",
-            self.sql_dir / "05_create_indexes.sql",
-            self.results_dir / "05_create_indexes.log",
-        ):
+        if self.partitioned:
+            index_sql = self.sql_dir / "05b_create_indexes_PARTITIONED.sql"
+            index_log = self.results_dir / "05b_create_indexes_partitioned.log"
+            index_label = "Create Indexes on Partitions (cascades to 480 partition indexes)"
+        else:
+            index_sql = self.sql_dir / "05_create_indexes.sql"
+            index_log = self.results_dir / "05_create_indexes.log"
+            index_label = "Create Indexes (5 per variant, 20 total)"
+
+        if not self.run_sql_phase("5", index_label, index_sql, index_log):
             return False
 
         # Phase 6b: Streaming INSERTs with indexes (with progress)
         log_file = self.results_dir / "07_streaming_phase2.log"
 
-        # Choose SQL file based on optimized flag
-        if self.optimized:
+        # Choose SQL file based on partitioned and optimized flags
+        if self.partitioned:
+            sql_file = self.sql_dir / "07b_streaming_inserts_withindex_PARTITIONED.sql"
+            phase_label = "Streaming INSERTs - Phase 2 (WITH INDEXES) - PARTITIONED"
+            log_file = self.results_dir / "07b_streaming_phase2_partitioned.log"
+        elif self.optimized:
             sql_file = self.sql_dir / "07a_streaming_inserts_withindex_OPTIMIZED.sql"
             phase_label = "Streaming INSERTs - Phase 2 (WITH INDEXES) - OPTIMIZED"
         else:
@@ -596,7 +638,13 @@ class StreamingBenchmark:
             TimeRemainingColumn(),
             console=console,
         ) as progress:
-            task_desc = "[cyan]Streaming INSERTs (Phase 2 - WITH INDEXES) ⚡ OPTIMIZED" if self.optimized else "[cyan]Streaming INSERTs (Phase 2 - WITH INDEXES)"
+            if self.partitioned:
+                task_desc = "[cyan]Streaming INSERTs (Phase 2 - WITH INDEXES) 🗂️  PARTITIONED"
+            elif self.optimized:
+                task_desc = "[cyan]Streaming INSERTs (Phase 2 - WITH INDEXES) ⚡ OPTIMIZED"
+            else:
+                task_desc = "[cyan]Streaming INSERTs (Phase 2 - WITH INDEXES)"
+
             task = progress.add_task(
                 task_desc, total=500
             )
@@ -633,14 +681,18 @@ class StreamingBenchmark:
             progress.update(task, completed=500)
 
         # Re-cluster PAX after Phase 2
-        log.info("Re-applying Z-order clustering to PAX tables...")
-        if not self.run_sql_phase(
-            "8b",
-            "PAX Z-order Clustering (Phase 2)",
-            self.sql_dir / "08_optimize_pax.sql",
-            self.results_dir / "08b_optimize_pax_phase2.log",
-        ):
-            return False
+        # Note: Skip for partitioned tables - partitions are already organized by date
+        if not self.partitioned:
+            log.info("Re-applying Z-order clustering to PAX tables...")
+            if not self.run_sql_phase(
+                "8b",
+                "PAX Z-order Clustering (Phase 2)",
+                self.sql_dir / "08_optimize_pax.sql",
+                self.results_dir / "08b_optimize_pax_phase2.log",
+            ):
+                return False
+        else:
+            log.info("Skipping Z-order clustering for partitioned tables (already organized by date)")
 
         # Phase 9b: Query Performance
         if not self.run_sql_phase(
@@ -652,30 +704,38 @@ class StreamingBenchmark:
             return False
 
         # Phase 10b: Collect Metrics (includes comparison)
-        if not self.run_sql_phase(
-            "10b",
-            "Collect Metrics - Phase 2 (includes comparison)",
-            self.sql_dir / "10_collect_metrics.sql",
-            self.results_dir / "10_metrics_phase2.txt",
-        ):
+        if self.partitioned:
+            metrics_sql = self.sql_dir / "10b_collect_metrics_PARTITIONED.sql"
+            metrics_log = self.results_dir / "10b_metrics_phase2_partitioned.txt"
+            metrics_label = "Collect Metrics - Phase 2 (includes comparison, PARTITIONED)"
+        else:
+            metrics_sql = self.sql_dir / "10_collect_metrics.sql"
+            metrics_log = self.results_dir / "10_metrics_phase2.txt"
+            metrics_label = "Collect Metrics - Phase 2 (includes comparison)"
+
+        if not self.run_sql_phase("10b", metrics_label, metrics_sql, metrics_log):
             return False
 
         # Phase 11b: Validate Phase 2
-        if not self.run_sql_phase(
-            "11b",
-            "Validate Results - Phase 2",
-            self.sql_dir / "11_validate_results.sql",
-            self.results_dir / "11_validation_phase2.txt",
-        ):
+        if self.partitioned:
+            validation_sql = self.sql_dir / "11b_validate_results_PARTITIONED.sql"
+            validation_log = self.results_dir / "11b_validation_phase2_partitioned.txt"
+            validation_label = "Validate Results - Phase 2 (PARTITIONED)"
+        else:
+            validation_sql = self.sql_dir / "11_validate_results.sql"
+            validation_log = self.results_dir / "11_validation_phase2.txt"
+            validation_label = "Validate Results - Phase 2"
+
+        if not self.run_sql_phase("11b", validation_label, validation_sql, validation_log):
             return False
 
         # Check validation
         has_failures, failure_count = self.check_validation(
-            self.results_dir / "11_validation_phase2.txt", "❌ FAILED"
+            validation_log, "❌ FAILED"
         )
         if has_failures:
             log.error(
-                f"Phase 2 validation failed! Review: {self.results_dir / '11_validation_phase2.txt'}"
+                f"Phase 2 validation failed! Review: {validation_log}"
             )
             return False
         else:
@@ -825,6 +885,12 @@ Examples:
         help="Use optimized configuration (Track A: batch caps, ANALYZE tuning, CSV export)",
     )
 
+    parser.add_argument(
+        "--partitioned",
+        action="store_true",
+        help="Use partitioned tables (Track B: 24 partitions per variant, expected 18-35%% Phase 2 speedup)",
+    )
+
     args = parser.parse_args()
 
     # Set logging level
@@ -834,7 +900,10 @@ Examples:
     # Create results directory with timestamp
     if args.results_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        results_dir = Path(__file__).parent.parent / "results" / f"run_{timestamp}"
+        if args.partitioned:
+            results_dir = Path(__file__).parent.parent / "results" / f"run_partitioned_{timestamp}"
+        else:
+            results_dir = Path(__file__).parent.parent / "results" / f"run_{timestamp}"
     else:
         results_dir = args.results_dir
 
@@ -846,6 +915,7 @@ Examples:
         no_interactive=args.no_interactive,
         verbose=args.verbose,
         optimized=args.optimized,
+        partitioned=args.partitioned,
     )
 
     # Run benchmark

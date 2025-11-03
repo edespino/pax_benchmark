@@ -69,10 +69,19 @@ DECLARE
     v_nc_bloat_ratio NUMERIC;
     v_clustered_bloat_ratio NUMERIC;
 BEGIN
-    -- pg_total_relation_size() automatically includes all child partitions
-    v_aoco_size := pg_total_relation_size('cdr.cdr_aoco_partitioned');
-    v_pax_nc_size := pg_total_relation_size('cdr.cdr_pax_nocluster_partitioned');
-    v_pax_size := pg_total_relation_size('cdr.cdr_pax_partitioned');
+    -- pg_total_relation_size() on parent returns 0 (Greenplum/Cloudberry behavior)
+    -- Use pg_partition_tree() to sum leaf partition sizes
+    SELECT SUM(pg_total_relation_size(relid)) INTO v_aoco_size
+    FROM pg_partition_tree('cdr.cdr_aoco_partitioned')
+    WHERE isleaf = true;
+
+    SELECT SUM(pg_total_relation_size(relid)) INTO v_pax_nc_size
+    FROM pg_partition_tree('cdr.cdr_pax_nocluster_partitioned')
+    WHERE isleaf = true;
+
+    SELECT SUM(pg_total_relation_size(relid)) INTO v_pax_size
+    FROM pg_partition_tree('cdr.cdr_pax_partitioned')
+    WHERE isleaf = true;
 
     v_nc_bloat_ratio := (v_pax_nc_size::NUMERIC / v_aoco_size::NUMERIC);
     v_clustered_bloat_ratio := (v_pax_size::NUMERIC / v_pax_nc_size::NUMERIC);

@@ -226,7 +226,7 @@ BEGIN
 
     RAISE NOTICE 'Generating realistic 24-hour traffic pattern (OPTIMIZED - no 500K bursts)...';
     RAISE NOTICE 'Using deterministic seed (0.5) for reproducible batch sizes';
-    RAISE NOTICE 'Partition routing: Hour % → 2024-01-% (24 partitions)', 0, '01', 01;
+    RAISE NOTICE 'Partition routing: Hour 0-23 → 2024-01-01 through 2024-01-24 (24 partitions)';
 
     -- Initialize arrays
     v_batch_sizes := ARRAY[]::INTEGER[];
