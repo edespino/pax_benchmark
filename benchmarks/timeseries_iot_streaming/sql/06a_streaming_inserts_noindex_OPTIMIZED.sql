@@ -200,10 +200,18 @@ DECLARE
     v_hours INTEGER[];
 BEGIN
     -- ==================================================
+    -- Set Deterministic Seed for Reproducibility
+    -- ==================================================
+
+    -- Use fixed seed to make batch sizes deterministic across runs
+    PERFORM setseed(0.5);
+
+    -- ==================================================
     -- Generate Traffic Pattern (OPTIMIZED)
     -- ==================================================
 
     RAISE NOTICE 'Generating realistic 24-hour traffic pattern (OPTIMIZED - no 500K bursts)...';
+    RAISE NOTICE 'Using deterministic seed (0.5) for reproducible batch sizes';
 
     -- Initialize arrays
     v_batch_sizes := ARRAY[]::INTEGER[];
@@ -374,7 +382,8 @@ BEGIN
     RAISE NOTICE '';
     RAISE NOTICE '==================================================';
     RAISE NOTICE 'Streaming INSERT simulation complete!';
-    RAISE NOTICE 'Total rows inserted: 50,000,000 (per variant)';
+    RAISE NOTICE 'Total rows inserted: % (per variant)', v_current_seq;
+    RAISE NOTICE 'Note: Variable batch sizes (random) result in ~30M rows, not 50M';
     RAISE NOTICE '==================================================';
 END $$;
 
