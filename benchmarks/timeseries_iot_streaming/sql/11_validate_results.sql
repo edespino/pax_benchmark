@@ -166,15 +166,11 @@ END $$;
 
 DO $$
 DECLARE
-    v_call_id_distinct NUMERIC;
     v_caller_distinct NUMERIC;
     v_callee_distinct NUMERIC;
 BEGIN
-    -- Check cardinality of bloom filter columns
-    SELECT n_distinct INTO v_call_id_distinct
-    FROM pg_stats
-    WHERE schemaname = 'cdr' AND tablename = 'cdr_pax' AND attname = 'call_id';
-
+    -- Check cardinality of bloom filter columns (caller_number, callee_number)
+    -- Note: call_id removed from bloom filters in Nov 2025 optimization (only 1 distinct value)
     SELECT n_distinct INTO v_caller_distinct
     FROM pg_stats
     WHERE schemaname = 'cdr' AND tablename = 'cdr_pax' AND attname = 'caller_number';
@@ -183,13 +179,13 @@ BEGIN
     FROM pg_stats
     WHERE schemaname = 'cdr' AND tablename = 'cdr_pax' AND attname = 'callee_number';
 
-    RAISE NOTICE 'Bloom filter column cardinalities:';
-    RAISE NOTICE '  call_id: % distinct values', ABS(v_call_id_distinct);
+    RAISE NOTICE 'Bloom filter column cardinalities (Nov 2025 optimized config):';
     RAISE NOTICE '  caller_number: % distinct values', ABS(v_caller_distinct);
     RAISE NOTICE '  callee_number: % distinct values', ABS(v_callee_distinct);
+    RAISE NOTICE '  (call_id removed - only 1 distinct value)';
     RAISE NOTICE '';
 
-    IF ABS(v_call_id_distinct) >= 1000 AND ABS(v_caller_distinct) >= 1000 AND ABS(v_callee_distinct) >= 1000 THEN
+    IF ABS(v_caller_distinct) >= 1000 AND ABS(v_callee_distinct) >= 1000 THEN
         RAISE NOTICE '✅ PASSED: All bloom filter columns have high cardinality (>1000 unique)';
     ELSE
         RAISE WARNING '🟠 WARNING: Some bloom filter columns have lower cardinality than expected';
