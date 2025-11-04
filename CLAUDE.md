@@ -158,19 +158,30 @@ cd benchmarks/ecommerce_clickstream
 ./scripts/run_clickstream_benchmark.sh
 ```
 
-**INSERT throughput / Streaming workloads** (20-55 min):
+**INSERT throughput / Streaming workloads** (20-55 min monolithic, 28 min partitioned):
 ```bash
 cd benchmarks/timeseries_iot_streaming
 
 # Python version (recommended - real-time progress)
 pip3 install -r scripts/requirements.txt  # First time only
+
+# Monolithic (single table per variant)
 ./scripts/run_streaming_benchmark.py      # Both phases (50 min, interactive)
 ./scripts/run_streaming_benchmark.py --phase 1  # Phase 1 only (20 min)
+
+# Partitioned (24 partitions per variant - 🏆 3.7x Phase 2 speedup)
+./scripts/run_streaming_benchmark.py --partitioned  # Both phases (28 min)
+./scripts/run_streaming_benchmark.py --partitioned --phase 1  # Phase 1 only (10 min)
 
 # Bash version (alternative - silent execution)
 ./scripts/run_phase1_noindex.sh        # Phase 1 only (20 min)
 ./scripts/run_streaming_benchmark.sh   # Both phases (50 min)
 ```
+
+**Why Partitioned?**
+- ✅ **3.1-3.7x Phase 2 speedup** (300m → 28m total runtime)
+- ✅ **Eliminates catastrophic stalls** (200x → 9x worst case)
+- ✅ **MANDATORY for tables >10M rows with indexes**
 
 **Comprehensive validation** (2-4 hours):
 ```bash

@@ -315,6 +315,46 @@ pip3 install -r scripts/requirements.txt
 
 **Recommendation**: Use Python version for interactive testing, bash for automated CI/CD pipelines.
 
+### Partitioned Tables (November 2025 - 🏆 3.7x Phase 2 Speedup)
+
+**Critical Finding**: Table partitioning delivers **3.1-3.7x Phase 2 speedup** for INSERT workloads with indexes.
+
+```bash
+# Run partitioned benchmark (both phases - 28 minutes)
+./scripts/run_streaming_benchmark.py --partitioned
+
+# Run partitioned benchmark (Phase 1 only)
+./scripts/run_streaming_benchmark.py --partitioned --phase 1
+
+# Compare: Monolithic vs Partitioned
+./scripts/run_streaming_benchmark.py --phase both  # Monolithic (300m)
+./scripts/run_streaming_benchmark.py --partitioned --phase both  # Partitioned (28m)
+```
+
+**What It Does**:
+- Creates 24 partitions (one per hour, RANGE on call_date)
+- Each partition: ~1.2M rows (vs 37M monolithic)
+- Index per partition: **30x smaller** → massive maintenance speedup
+
+**Results**:
+
+| Metric | Monolithic | Partitioned | Improvement |
+|--------|-----------|-------------|-------------|
+| **Total Runtime** | 300m (5 hrs) | 28m | **10.6x faster** 🏆 |
+| **Phase 2 Runtime** | 284m (4.7 hrs) | 17m | **16.8x faster** 🏆 |
+| **AO Throughput** | 42,967 rows/sec | 142,879 rows/sec | **3.33x** |
+| **PAX Throughput** | 45,576 rows/sec | 142,059 rows/sec | **3.12x** |
+| **Phase 2 Degradation** | -80-84% | -37-47% | **Cuts overhead in HALF** |
+| **Min Throughput** | 1,331 rows/sec (200x stall) | 15,198 rows/sec | **No catastrophic stalls** |
+
+**When to Use Partitioning**:
+- ✅ **Tables >10M rows with indexes** - MANDATORY
+- ✅ **Streaming INSERT workloads** - 3-4x Phase 2 speedup
+- ✅ **Production deployments** - Eliminates 200x throughput stalls
+- ❌ **Small tables (<1M rows)** - Unnecessary overhead
+
+**Documentation**: See `docs/PARTITIONED_VS_MONOLITHIC_COMPARISON.md` for complete analysis.
+
 ---
 
 ## Implementation Details: PROCEDURE vs DO Block
