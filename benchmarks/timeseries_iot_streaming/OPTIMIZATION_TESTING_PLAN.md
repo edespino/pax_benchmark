@@ -159,6 +159,59 @@ CREATE INDEX idx_pax_caller ON cdr.cdr_pax(caller_number);
 - Throughput variance < 50x (vs 100-149x baseline)
 - CSV metrics export successful
 
+### ❌ ACTUAL RESULTS (November 3-4, 2025) - **NOT RECOMMENDED**
+
+**Status**: ❌ **MARGINAL IMPROVEMENT - NOT WORTH THE EFFORT**
+
+**Runtime Comparison**:
+| Metric | Baseline | Optimized (Track A) | Partitioned (Track B) |
+|--------|----------|---------------------|----------------------|
+| **Total Runtime** | 300m 16s (5 hrs) | **207m 0s (3.5 hrs)** | **28m 21s** |
+| **Phase 2** | 284m 12s (4.7 hrs) | **195m 53s (3.3 hrs)** | **16m 57s** |
+| **vs Baseline** | 1.00x | **1.45x faster** | **10.6x faster** 🏆 |
+| **vs Partitioned** | 10.6x slower | **7.3x slower** | 1.00x |
+
+**Phase 2 Throughput** (with indexes):
+| Variant | Baseline | Optimized (Track A) | Improvement |
+|---------|----------|---------------------|-------------|
+| **AO** | 42,967 rows/sec | 45,857 rows/sec | **+6.7%** |
+| **AOCO** | 32,262 rows/sec | 35,535 rows/sec | **+10.1%** |
+| **PAX** | 45,576 rows/sec | 48,916 rows/sec | **+7.3%** |
+| **PAX-no-cluster** | 45,586 rows/sec | 50,058 rows/sec | **+9.8%** |
+
+**Phase 2 Degradation** (Phase 1 → Phase 2):
+| Variant | Baseline | Optimized (Track A) | Improvement |
+|---------|----------|---------------------|-------------|
+| AO | **-83.9%** | **-82.9%** | **-1.0 pp** (marginal) |
+| AOCO | **-83.4%** | **-81.3%** | **-2.1 pp** (marginal) |
+| PAX | **-80.8%** | **-79.3%** | **-1.5 pp** (marginal) |
+| PAX-no-cluster | **-80.8%** | **-79.0%** | **-1.8 pp** (marginal) |
+
+**Min Throughput** (Phase 2 worst case):
+| Variant | Baseline | Optimized (Track A) | Improvement |
+|---------|----------|---------------------|-------------|
+| AO | 1,331 rows/sec | 1,504 rows/sec | **+13%** (still catastrophic) |
+| AOCO | 1,427 rows/sec | 1,684 rows/sec | **+18%** (still catastrophic) |
+| PAX | 1,820 rows/sec | 2,002 rows/sec | **+10%** (still catastrophic) |
+| PAX-no-cluster | 2,024 rows/sec | 1,916 rows/sec | **-5%** ❌ **WORSE!** |
+
+**Key Findings**:
+1. ❌ **Phase 2 speedup: Only 7-10%** (far below 30-40% target)
+2. ❌ **Degradation reduction: Only 1-2 pp** (vs 37-46 pp for partitioned)
+3. ❌ **Failed to eliminate catastrophic stalls** (still 100-200x slower at minimum)
+4. ⚠️ **PAX-no-cluster got WORSE** (min throughput decreased)
+5. ❌ **NOT recommended** for production
+
+**Root Cause Analysis**:
+- **Batch size optimization is irrelevant** when index maintenance dominates
+- Removing 500K batches only helped marginally (7-10%)
+- The real problem is **O(n log n) index maintenance on 29M row tables**
+- Only **algorithmic solution (partitioning)** addresses the core issue
+
+**Verdict**: ❌ **Track A provides minimal benefit. Use Track B (partitioned) instead.**
+
+**Three-Way Comparison**: See `docs/THREE_WAY_COMPARISON.md` for detailed analysis.
+
 ---
 
 ## Track B: Table Partitioning
