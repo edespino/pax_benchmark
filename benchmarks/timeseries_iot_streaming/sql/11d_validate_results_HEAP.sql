@@ -1,0 +1,272 @@
+--
+-- Phase 11d: Validate Results (WITH HEAP) (Safety Gates)
+-- Validates benchmark results against expected thresholds
+-- Based on October 2025 PAX testing lessons
+--
+
+\timing on
+
+\echo '===================================================='
+\echo 'Streaming Benchmark - Phase 11d: Result Validation'
+\echo '===================================================='
+\echo ''
+
+-- =====================================================
+-- Gate 1: Row Count Consistency
+-- All variants must have identical row counts
+-- =====================================================
+
+\echo 'Gate 1: Row Count Consistency'
+\echo '=============================='
+\echo ''
+
+DO $$
+DECLARE
+    v_ao_count BIGINT;
+    v_aoco_count BIGINT;
+    v_pax_count BIGINT;
+    v_pax_nc_count BIGINT;
+    v_heap_count BIGINT;
+BEGIN
+    SELECT COUNT(*) INTO v_ao_count FROM cdr.cdr_ao;
+    SELECT COUNT(*) INTO v_aoco_count FROM cdr.cdr_aoco;
+    SELECT COUNT(*) INTO v_pax_count FROM cdr.cdr_pax;
+    SELECT COUNT(*) INTO v_pax_nc_count FROM cdr.cdr_pax_nocluster;
+    SELECT COUNT(*) INTO v_heap_count FROM cdr.cdr_heap;
+
+    RAISE NOTICE 'Row counts:';
+    RAISE NOTICE '  AO: %', v_ao_count;
+    RAISE NOTICE '  AOCO: %', v_aoco_count;
+    RAISE NOTICE '  PAX: %', v_pax_count;
+    RAISE NOTICE '  PAX-no-cluster: %', v_pax_nc_count;
+    RAISE NOTICE '  HEAP: %', v_heap_count;
+    RAISE NOTICE '';
+
+    IF v_ao_count = v_aoco_count AND v_aoco_count = v_pax_count AND v_pax_count = v_pax_nc_count AND v_pax_nc_count = v_heap_count THEN
+        RAISE NOTICE '✅ PASSED: All variants have identical row counts (% rows)', v_ao_count;
+    ELSE
+        RAISE EXCEPTION '❌ FAILED: Row count mismatch! Data integrity compromised.';
+    END IF;
+END $$;
+
+\echo ''
+
+-- =====================================================
+-- Gate 2: PAX Configuration Bloat Check
+-- PAX variants must not have excessive storage bloat
+-- =====================================================
+
+\echo 'Gate 2: PAX Configuration Bloat Check'
+\echo '====================================='
+\echo ''
+
+DO $$
+DECLARE
+    v_aoco_size BIGINT;
+    v_pax_nc_size BIGINT;
+    v_pax_size BIGINT;
+    v_nc_bloat_ratio NUMERIC;
+    v_clustered_bloat_ratio NUMERIC;
+BEGIN
+    v_aoco_size := pg_total_relation_size('cdr.cdr_aoco');
+    v_pax_nc_size := pg_total_relation_size('cdr.cdr_pax_nocluster');
+    v_pax_size := pg_total_relation_size('cdr.cdr_pax');
+
+    v_nc_bloat_ratio := (v_pax_nc_size::NUMERIC / v_aoco_size::NUMERIC);
+    v_clustered_bloat_ratio := (v_pax_size::NUMERIC / v_pax_nc_size::NUMERIC);
+
+    RAISE NOTICE 'Storage sizes:';
+    RAISE NOTICE '  AOCO (baseline): %', pg_size_pretty(v_aoco_size);
+    RAISE NOTICE '  PAX-no-cluster: % (%x vs AOCO)', pg_size_pretty(v_pax_nc_size), ROUND(v_nc_bloat_ratio, 2);
+    RAISE NOTICE '  PAX-clustered: % (%x vs no-cluster)', pg_size_pretty(v_pax_size), ROUND(v_clustered_bloat_ratio, 2);
+    RAISE NOTICE '';
+
+    -- Check PAX no-cluster vs AOCO
+    IF v_nc_bloat_ratio < 1.20 THEN
+        RAISE NOTICE '✅ PASSED: PAX-no-cluster bloat is healthy (<20%% overhead)';
+    ELSIF v_nc_bloat_ratio < 1.40 THEN
+        RAISE WARNING '🟠 WARNING: PAX-no-cluster has moderate bloat (20-40%% overhead). Review bloom filter configuration.';
+    ELSE
+        RAISE EXCEPTION '❌ FAILED: PAX-no-cluster has CRITICAL bloat (>40%% overhead). Bloom filter misconfiguration likely!';
+    END IF;
+
+    -- Check PAX clustered vs no-cluster
+    IF v_clustered_bloat_ratio < 1.40 THEN
+        RAISE NOTICE '✅ PASSED: PAX-clustered overhead is acceptable (<40%%)';
+    ELSIF v_clustered_bloat_ratio < 1.60 THEN
+        RAISE WARNING '🟠 WARNING: PAX-clustered has moderate overhead (40-60%%). Consider increasing maintenance_work_mem.';
+    ELSE
+        RAISE EXCEPTION '❌ FAILED: PAX-clustered has excessive overhead (>60%%). Check maintenance_work_mem and bloom filter config!';
+    END IF;
+END $$;
+
+\echo ''
+
+-- =====================================================
+-- Gate 3: INSERT Throughput Sanity Check
+-- PAX must achieve reasonable INSERT performance
+-- =====================================================
+
+\echo 'Gate 3: INSERT Throughput Sanity Check'
+\echo '======================================='
+\echo ''
+
+DO $$
+DECLARE
+    v_table_name TEXT;
+    v_ao_throughput NUMERIC;
+    v_pax_throughput NUMERIC;
+    v_ratio NUMERIC;
+BEGIN
+    -- Check which table exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'cdr' AND table_name = 'streaming_metrics_phase1_test') THEN
+        v_table_name := 'streaming_metrics_phase1_test';
+        RAISE NOTICE 'Using Phase 1 metrics from TEST run';
+    ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'cdr' AND table_name = 'streaming_metrics_phase1') THEN
+        v_table_name := 'streaming_metrics_phase1';
+        RAISE NOTICE 'Using Phase 1 metrics from PRODUCTION run';
+    ELSE
+        RAISE NOTICE 'Phase 1 metrics not found (table does not exist)';
+        RAISE NOTICE 'Run 06_streaming_inserts_noindex.sql first';
+        RETURN;
+    END IF;
+
+    -- Get Phase 1 throughput (no indexes) using dynamic SQL
+    EXECUTE format('SELECT AVG(throughput_rows_sec) FROM cdr.%I WHERE variant = ''AO''', v_table_name)
+        INTO v_ao_throughput;
+
+    EXECUTE format('SELECT AVG(throughput_rows_sec) FROM cdr.%I WHERE variant = ''PAX''', v_table_name)
+        INTO v_pax_throughput;
+
+    v_ratio := v_pax_throughput / v_ao_throughput;
+
+    RAISE NOTICE '';
+    RAISE NOTICE 'Phase 1 (no indexes) throughput:';
+    RAISE NOTICE '  AO: % rows/sec', ROUND(v_ao_throughput, 0);
+    RAISE NOTICE '  PAX: % rows/sec', ROUND(v_pax_throughput, 0);
+    RAISE NOTICE '  Ratio: PAX is %%% of AO speed', ROUND(v_ratio * 100, 1);
+    RAISE NOTICE '';
+
+    IF v_ratio >= 0.50 THEN
+        RAISE NOTICE '✅ PASSED: PAX INSERT speed is acceptable (>50%% of AO)';
+    ELSIF v_ratio >= 0.30 THEN
+        RAISE WARNING '🟠 WARNING: PAX INSERT speed is slower than expected (30-50%% of AO)';
+    ELSE
+        RAISE EXCEPTION '❌ FAILED: PAX INSERT speed is critically slow (<30%% of AO)';
+    END IF;
+END $$;
+
+\echo ''
+
+-- =====================================================
+-- Gate 4: Bloom Filter Effectiveness (Optional)
+-- Verify bloom filters are providing value
+-- =====================================================
+
+\echo 'Gate 4: Bloom Filter Effectiveness'
+\echo '==================================='
+\echo ''
+
+DO $$
+DECLARE
+    v_caller_distinct NUMERIC;
+    v_callee_distinct NUMERIC;
+BEGIN
+    -- Check cardinality of bloom filter columns (caller_number, callee_number)
+    -- Note: call_id removed from bloom filters in Nov 2025 optimization (only 1 distinct value)
+    SELECT n_distinct INTO v_caller_distinct
+    FROM pg_stats
+    WHERE schemaname = 'cdr' AND tablename = 'cdr_pax' AND attname = 'caller_number';
+
+    SELECT n_distinct INTO v_callee_distinct
+    FROM pg_stats
+    WHERE schemaname = 'cdr' AND tablename = 'cdr_pax' AND attname = 'callee_number';
+
+    RAISE NOTICE 'Bloom filter column cardinalities (Nov 2025 optimized config):';
+    RAISE NOTICE '  caller_number: % distinct values', ABS(v_caller_distinct);
+    RAISE NOTICE '  callee_number: % distinct values', ABS(v_callee_distinct);
+    RAISE NOTICE '  (call_id removed - only 1 distinct value)';
+    RAISE NOTICE '';
+
+    IF ABS(v_caller_distinct) >= 1000 AND ABS(v_callee_distinct) >= 1000 THEN
+        RAISE NOTICE '✅ PASSED: All bloom filter columns have high cardinality (>1000 unique)';
+    ELSE
+        RAISE WARNING '🟠 WARNING: Some bloom filter columns have lower cardinality than expected';
+    END IF;
+END $$;
+
+\echo ''
+
+-- =====================================================
+-- Gate 5: HEAP Bloat Analysis (ACADEMIC ONLY)
+-- Expected: HEAP will have significant bloat vs append-only storage
+-- This demonstrates WHY append-only storage (AO/AOCO/PAX) exists
+-- =====================================================
+
+\echo 'Gate 5: HEAP Bloat Analysis (Academic)'
+\echo '======================================'
+\echo ''
+\echo '⚠️  This gate is for academic demonstration only'
+\echo '⚠️  HEAP bloat is EXPECTED and demonstrates why AO/AOCO/PAX exist'
+\echo ''
+
+DO $$
+DECLARE
+    v_heap_size BIGINT;
+    v_ao_size BIGINT;
+    v_heap_bloat_ratio NUMERIC;
+BEGIN
+    v_heap_size := pg_total_relation_size('cdr.cdr_heap');
+    v_ao_size := pg_total_relation_size('cdr.cdr_ao');
+    v_heap_bloat_ratio := v_heap_size::NUMERIC / v_ao_size::NUMERIC;
+
+    RAISE NOTICE 'HEAP vs AO comparison:';
+    RAISE NOTICE '  HEAP size: %', pg_size_pretty(v_heap_size);
+    RAISE NOTICE '  AO size: %', pg_size_pretty(v_ao_size);
+    RAISE NOTICE '  HEAP bloat ratio: %x', ROUND(v_heap_bloat_ratio, 2);
+    RAISE NOTICE '';
+
+    IF v_heap_bloat_ratio <= 1.2 THEN
+        RAISE NOTICE '⚠️  UNEXPECTED: HEAP has minimal bloat (<%)', ROUND((v_heap_bloat_ratio - 1) * 100, 1);
+        RAISE NOTICE '    This suggests limited UPDATE/DELETE activity or recent VACUUM';
+    ELSIF v_heap_bloat_ratio <= 1.5 THEN
+        RAISE NOTICE '✅ ACADEMIC SUCCESS: HEAP shows moderate bloat (%)', ROUND((v_heap_bloat_ratio - 1) * 100, 1);
+        RAISE NOTICE '    This demonstrates append-only storage benefits';
+    ELSIF v_heap_bloat_ratio <= 2.0 THEN
+        RAISE NOTICE '✅ ACADEMIC SUCCESS: HEAP shows significant bloat (%)', ROUND((v_heap_bloat_ratio - 1) * 100, 1);
+        RAISE NOTICE '    This clearly demonstrates why AO/AOCO/PAX exist';
+    ELSE
+        RAISE NOTICE '✅ ACADEMIC SUCCESS: HEAP shows CATASTROPHIC bloat (%)', ROUND((v_heap_bloat_ratio - 1) * 100, 1);
+        RAISE NOTICE '    This dramatically demonstrates append-only storage advantages';
+    END IF;
+
+    RAISE NOTICE '';
+    RAISE NOTICE 'Key Learning: Append-only storage (AO/AOCO/PAX) avoids this bloat';
+    RAISE NOTICE '              by never updating rows in-place';
+END $$;
+
+\echo ''
+
+-- =====================================================
+-- Summary
+-- =====================================================
+
+\echo '===================================================='
+\echo 'VALIDATION SUMMARY'
+\echo '===================================================='
+\echo ''
+\echo 'All validation gates:';
+\echo '  1. Row count consistency: Check above';
+\echo '  2. PAX configuration bloat: Check above';
+\echo '  3. INSERT throughput sanity: Check above';
+\echo '  4. Bloom filter effectiveness: Check above';
+\echo '  5. HEAP bloat analysis: Check above (academic demonstration)';
+\echo ''
+\echo 'If all gates passed: ✅ Benchmark results are valid!';
+\echo 'If any gates failed: ❌ Review configuration and re-run';
+\echo ''
+\echo '⚠️  HEAP bloat is EXPECTED - this demonstrates append-only benefits';
+\echo ''
+\echo '===================================================='
+\echo 'Benchmark complete (WITH HEAP academic variant)!'
+\echo '===================================================='

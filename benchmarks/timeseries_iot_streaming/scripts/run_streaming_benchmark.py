@@ -87,6 +87,7 @@ class StreamingBenchmark:
         verbose: bool,
         optimized: bool = False,
         partitioned: bool = False,
+        heap: bool = False,
     ):
         self.psql_cmd = psql_cmd
         self.results_dir = results_dir
@@ -95,6 +96,7 @@ class StreamingBenchmark:
         self.verbose = verbose
         self.optimized = optimized
         self.partitioned = partitioned
+        self.heap = heap
         self.timer = PhaseTimer()
         self.sql_dir = Path(__file__).parent.parent / "sql"
 
@@ -377,7 +379,11 @@ class StreamingBenchmark:
             return False
 
         # Phase 4: Create Table Variants
-        if self.partitioned:
+        if self.heap:
+            phase_label = "Create Variants with HEAP (AO/AOCO/PAX/PAX-no-cluster/HEAP) - Track C"
+            sql_file = self.sql_dir / "04d_create_variants_WITH_HEAP.sql"
+            log_file = self.results_dir / "04d_create_variants_heap.log"
+        elif self.partitioned:
             phase_label = "Create Partitioned Variants (AO/AOCO/PAX/PAX-no-cluster) - 96 partitions"
             sql_file = self.sql_dir / "04c_create_variants_PARTITIONED.sql"
             log_file = self.results_dir / "04c_create_variants_partitioned.log"
@@ -407,8 +413,12 @@ class StreamingBenchmark:
         # Phase 6a: Streaming INSERTs with progress monitoring
         log_file = self.results_dir / "06_streaming_phase1.log"
 
-        # Choose SQL file based on partitioned and optimized flags
-        if self.partitioned:
+        # Choose SQL file based on heap, partitioned and optimized flags
+        if self.heap:
+            sql_file = self.sql_dir / "06d_streaming_inserts_noindex_HEAP.sql"
+            phase_label = "Streaming INSERTs - Phase 1 (NO INDEXES) - WITH HEAP"
+            log_file = self.results_dir / "06d_streaming_phase1_heap.log"
+        elif self.partitioned:
             sql_file = self.sql_dir / "06b_streaming_inserts_noindex_PARTITIONED.sql"
             phase_label = "Streaming INSERTs - Phase 1 (NO INDEXES) - PARTITIONED"
             log_file = self.results_dir / "06b_streaming_phase1_partitioned.log"
@@ -512,7 +522,11 @@ class StreamingBenchmark:
             return False
 
         # Phase 10a: Collect Metrics
-        if self.partitioned:
+        if self.heap:
+            metrics_sql = self.sql_dir / "10d_collect_metrics_HEAP.sql"
+            metrics_log = self.results_dir / "10d_metrics_phase1_heap.txt"
+            metrics_label = "Collect Metrics - Phase 1 (WITH HEAP)"
+        elif self.partitioned:
             metrics_sql = self.sql_dir / "10b_collect_metrics_PARTITIONED.sql"
             metrics_log = self.results_dir / "10b_metrics_phase1_partitioned.txt"
             metrics_label = "Collect Metrics - Phase 1 (PARTITIONED)"
@@ -525,7 +539,11 @@ class StreamingBenchmark:
             return False
 
         # Phase 11a: Validate Results
-        if self.partitioned:
+        if self.heap:
+            validation_sql = self.sql_dir / "11d_validate_results_HEAP.sql"
+            validation_log = self.results_dir / "11d_validation_phase1_heap.txt"
+            validation_label = "Validate Results - Phase 1 (WITH HEAP)"
+        elif self.partitioned:
             validation_sql = self.sql_dir / "11b_validate_results_PARTITIONED.sql"
             validation_log = self.results_dir / "11b_validation_phase1_partitioned.txt"
             validation_label = "Validate Results - Phase 1 (PARTITIONED)"
@@ -589,7 +607,11 @@ class StreamingBenchmark:
 
         # Drop and recreate tables with indexes
         log.warning("Dropping existing tables to recreate with indexes...")
-        if self.partitioned:
+        if self.heap:
+            table_sql = self.sql_dir / "04d_create_variants_WITH_HEAP.sql"
+            table_log = self.results_dir / "04d_create_variants_phase2.log"
+            table_label = "Recreate Tables for Phase 2 (WITH HEAP)"
+        elif self.partitioned:
             table_sql = self.sql_dir / "04c_create_variants_PARTITIONED.sql"
             table_log = self.results_dir / "04c_create_variants_phase2.log"
             table_label = "Recreate Partitioned Tables for Phase 2"
@@ -602,7 +624,11 @@ class StreamingBenchmark:
             return False
 
         # Phase 5: Create Indexes
-        if self.partitioned:
+        if self.heap:
+            index_sql = self.sql_dir / "05d_create_indexes_WITH_HEAP.sql"
+            index_log = self.results_dir / "05d_create_indexes_heap.log"
+            index_label = "Create Indexes (5 per variant, 25 total with HEAP)"
+        elif self.partitioned:
             index_sql = self.sql_dir / "05b_create_indexes_PARTITIONED.sql"
             index_log = self.results_dir / "05b_create_indexes_partitioned.log"
             index_label = "Create Indexes on Partitions (cascades to 480 partition indexes)"
@@ -617,8 +643,12 @@ class StreamingBenchmark:
         # Phase 6b: Streaming INSERTs with indexes (with progress)
         log_file = self.results_dir / "07_streaming_phase2.log"
 
-        # Choose SQL file based on partitioned and optimized flags
-        if self.partitioned:
+        # Choose SQL file based on heap, partitioned and optimized flags
+        if self.heap:
+            sql_file = self.sql_dir / "07d_streaming_inserts_withindex_HEAP.sql"
+            phase_label = "Streaming INSERTs - Phase 2 (WITH INDEXES) - WITH HEAP"
+            log_file = self.results_dir / "07d_streaming_phase2_heap.log"
+        elif self.partitioned:
             sql_file = self.sql_dir / "07b_streaming_inserts_withindex_PARTITIONED.sql"
             phase_label = "Streaming INSERTs - Phase 2 (WITH INDEXES) - PARTITIONED"
             log_file = self.results_dir / "07b_streaming_phase2_partitioned.log"
@@ -704,7 +734,11 @@ class StreamingBenchmark:
             return False
 
         # Phase 10b: Collect Metrics (includes comparison)
-        if self.partitioned:
+        if self.heap:
+            metrics_sql = self.sql_dir / "10d_collect_metrics_HEAP.sql"
+            metrics_log = self.results_dir / "10d_metrics_phase2_heap.txt"
+            metrics_label = "Collect Metrics - Phase 2 (includes comparison, WITH HEAP)"
+        elif self.partitioned:
             metrics_sql = self.sql_dir / "10b_collect_metrics_PARTITIONED.sql"
             metrics_log = self.results_dir / "10b_metrics_phase2_partitioned.txt"
             metrics_label = "Collect Metrics - Phase 2 (includes comparison, PARTITIONED)"
@@ -717,7 +751,11 @@ class StreamingBenchmark:
             return False
 
         # Phase 11b: Validate Phase 2
-        if self.partitioned:
+        if self.heap:
+            validation_sql = self.sql_dir / "11d_validate_results_HEAP.sql"
+            validation_log = self.results_dir / "11d_validation_phase2_heap.txt"
+            validation_label = "Validate Results - Phase 2 (WITH HEAP)"
+        elif self.partitioned:
             validation_sql = self.sql_dir / "11b_validate_results_PARTITIONED.sql"
             validation_log = self.results_dir / "11b_validation_phase2_partitioned.txt"
             validation_label = "Validate Results - Phase 2 (PARTITIONED)"
@@ -891,6 +929,12 @@ Examples:
         help="Use partitioned tables (Track B: 24 partitions per variant, expected 18-35%% Phase 2 speedup)",
     )
 
+    parser.add_argument(
+        "--heap",
+        action="store_true",
+        help="Include HEAP variant (Track C: 5 variants including HEAP for academic comparison - demonstrates bloat)",
+    )
+
     args = parser.parse_args()
 
     # Set logging level
@@ -900,7 +944,9 @@ Examples:
     # Create results directory with timestamp
     if args.results_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if args.partitioned:
+        if args.heap:
+            results_dir = Path(__file__).parent.parent / "results" / f"run_heap_{timestamp}"
+        elif args.partitioned:
             results_dir = Path(__file__).parent.parent / "results" / f"run_partitioned_{timestamp}"
         else:
             results_dir = Path(__file__).parent.parent / "results" / f"run_{timestamp}"
@@ -916,6 +962,7 @@ Examples:
         verbose=args.verbose,
         optimized=args.optimized,
         partitioned=args.partitioned,
+        heap=args.heap,
     )
 
     # Run benchmark
