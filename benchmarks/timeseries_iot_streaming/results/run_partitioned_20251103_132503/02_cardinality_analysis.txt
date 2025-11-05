@@ -1,0 +1,142 @@
+Timing is on.
+====================================================
+Streaming Benchmark - Phase 2: Cardinality Analysis
+====================================================
+
+⚠️  CRITICAL: This validates bloom filter candidates
+⚠️  BEFORE table creation to prevent storage bloat
+
+Step 1: Creating sample CDR table for analysis...
+  (This will be dropped after analysis)
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/02_analyze_cardinality.sql:26: NOTICE:  table "cdr_sample" does not exist, skipping
+DROP TABLE
+Time: 4.564 ms
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/02_analyze_cardinality.sql:113: NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause. Creating a NULL policy entry.
+SELECT 1000000
+Time: 3489.460 ms (00:03.489)
+  ✓ Sample CDR table created (1M rows)
+
+Step 2: Running ANALYZE to collect statistics...
+ANALYZE
+Time: 384.009 ms
+  ✓ Statistics collected
+
+====================================================
+BLOOM FILTER CANDIDATE VALIDATION
+====================================================
+
+Proposed bloom filter columns for validation:
+  - call_id (expected: HIGH cardinality - 1M unique)
+  - caller_number (expected: HIGH cardinality - ~1M unique)
+  - callee_number (expected: HIGH cardinality - ~1M unique)
+  - cell_tower_id (expected: MEDIUM cardinality - ~10K unique)
+  - call_type (expected: LOW cardinality - 3 unique)
+  - termination_code (expected: LOW cardinality - ~20 unique)
+
+Validation results:
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/02_analyze_cardinality.sql:152: ERROR:  structure of query does not match function result type
+DETAIL:  Returned type real does not match expected type numeric in column 2.
+CONTEXT:  SQL statement "SELECT
+        s.attname::TEXT,
+        s.n_distinct,
+        CASE
+            WHEN s.n_distinct >= 0 THEN s.n_distinct::BIGINT
+            ELSE (r.reltuples * ABS(s.n_distinct))::BIGINT
+        END AS cardinality_estimate,
+        CASE
+            WHEN ABS(s.n_distinct::NUMERIC) >= v_min_bloom THEN '✅ SAFE'::TEXT
+            WHEN ABS(s.n_distinct::NUMERIC) >= v_warn_bloom THEN '🟠 WARNING'::TEXT
+            ELSE '❌ UNSAFE'::TEXT
+        END AS verdict,
+        CASE
+            WHEN ABS(s.n_distinct::NUMERIC) >= v_min_bloom THEN
+                'High cardinality (' || ABS(s.n_distinct)::TEXT || ' unique values) - bloom filter will provide significant file-level pruning'
+            WHEN ABS(s.n_distinct::NUMERIC) >= v_warn_bloom THEN
+                'Borderline cardinality (' || ABS(s.n_distinct)::TEXT || ' unique) - consider cost/benefit. May waste storage for minimal gain.'
+            ELSE
+                '🔴 CRITICAL: TOO LOW (' || ABS(s.n_distinct)::TEXT || ' unique) - bloom filter will cause MASSIVE storage bloat! Remove from bloomfilter_columns!'
+        END::TEXT AS reason,
+        CASE
+            WHEN ABS(s.n_distinct::NUMERIC) >= v_min_bloom THEN
+                'Add to bloomfilter_columns AND minmax_columns'::TEXT
+            WHEN ABS(s.n_distinct::NUMERIC) >= v_warn_bloom THEN
+                'Test with and without bloom filter, measure impact. Consider minmax_columns only.'::TEXT
+            ELSE
+                '❌ REMOVE from bloomfilter_columns. Use minmax_columns instead (if cardinality > 10).'::TEXT
+        END AS recommendation
+    FROM pg_stats s
+    CROSS JOIN (
+        SELECT c.reltuples
+        FROM pg_class c
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE n.nspname = p_schema_name
+          AND c.relname = p_table_name
+    ) r
+    WHERE s.schemaname = p_schema_name
+      AND s.tablename = p_table_name
+      AND s.attname = ANY(p_proposed_bloom_columns)
+    ORDER BY ABS(s.n_distinct) DESC"
+PL/pgSQL function cdr_validation.validate_bloom_candidates(text,text,text[]) line 13 at RETURN QUERY
+Time: 9.409 ms
+
+====================================================
+
+Cardinality summary for ALL columns:
+
+ column_name | n_distinct | estimated_unique_values | recommendation | null_fraction | avg_bytes 
+-------------+------------+-------------------------+----------------+---------------+-----------
+(0 rows)
+
+Time: 2.145 ms
+
+====================================================
+MEMORY REQUIREMENTS FOR CLUSTERING
+====================================================
+
+Target table size: 50,000,000 rows (streaming test)
+
+   rows   | base_memory_mb | recommended_memory_mb | recommended_memory_setting |                                                                           rationale                                                                           
+----------+----------------+-----------------------+----------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 50000000 |          10000 |                 12000 | 12000MB                    | Formula: (50000000 rows / 1M) * 200MB * 1.20 safety margin = 12000MB. Set maintenance_work_mem to this value BEFORE running CLUSTER to prevent storage bloat.
+(1 row)
+
+Time: 6.809 ms
+
+====================================================
+EXPECTED CONFIGURATION SUMMARY
+====================================================
+
+Based on cardinality analysis:
+
+SAFE for bloom filters (cardinality >= 1000):
+  ⚠️  call_id (EXPECTED ~1M unique, but ACTUAL: 1 unique - SKIP!)
+  ✅ caller_number (~2,000,000 unique)
+  ✅ callee_number (~2,000,000 unique)
+  ✅ cell_tower_id (~10,000 unique)
+
+UNSAFE for bloom filters (cardinality < 100):
+  ❌ call_type (~3 unique) - Use minmax only
+  ❌ network_type (~3 unique) - Skip
+  ❌ termination_code (~20 unique) - Use minmax only
+  ❌ rate_plan_id (~50 unique) - Use minmax only
+
+RECOMMENDED PAX CONFIGURATION:
+  bloomfilter_columns='caller_number,callee_number'
+  minmax_columns='call_date,call_hour,caller_number,callee_number,cell_tower_id,duration_seconds,call_type,termination_code'
+  cluster_columns='call_hour,cell_tower_id' (time + location correlation)
+  maintenance_work_mem: See calculation above (12GB for 50M rows)
+
+NOTE: Nov 2025 optimizations applied:
+      • 2 bloom columns (call_id removed - only 1 distinct value)
+      • call_hour clustering (24 values) vs call_date (1 value) = -3.1% storage
+      • cell_tower_id safe but excluded to keep bloom filter count low
+
+DROP TABLE
+Time: 12.790 ms
+====================================================
+Cardinality analysis complete!
+====================================================
+
+Next: Phase 3 - Generate safe PAX configuration

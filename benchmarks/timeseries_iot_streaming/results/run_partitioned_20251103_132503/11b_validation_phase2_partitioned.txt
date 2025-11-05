@@ -1,0 +1,96 @@
+Timing is on.
+====================================================
+Streaming Benchmark - Phase 11b: Result Validation (PARTITIONED)
+====================================================
+
+Gate 1: Row Count Consistency (Partitioned Variants)
+=====================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:51: NOTICE:  Row counts (partitioned tables):
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:51: NOTICE:    AO: 29210000 rows (24 partitions)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:51: NOTICE:    AOCO: 29210000 rows (24 partitions)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:51: NOTICE:    PAX: 29210000 rows (24 partitions)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:51: NOTICE:    PAX-no-cluster: 29210000 rows (24 partitions)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:51: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:51: NOTICE:  ✅ PASSED: All variants have identical row counts (29210000 rows)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:51: NOTICE:      Note: Each partition contains ~1217083 rows
+DO
+Time: 5335.234 ms (00:05.335)
+
+Gate 2: PAX Configuration Bloat Check (Partitioned)
+====================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:103: ERROR:  division by zero
+CONTEXT:  PL/pgSQL function inline_code_block line 14 at assignment
+Time: 7.005 ms
+
+Gate 3: INSERT Throughput Sanity Check (Partitioned)
+=====================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:159: NOTICE:  Using Phase 1 metrics from PARTITIONED PRODUCTION run
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:159: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:159: NOTICE:  Phase 1 (no indexes, partitioned) throughput:
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:159: NOTICE:    AO: 268312 rows/sec
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:159: NOTICE:    PAX: 240628 rows/sec
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:159: NOTICE:    Ratio: PAX is %89.7 of AO speed
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:159: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:159: NOTICE:  ✅ PASSED: PAX INSERT speed is acceptable (>50% of AO)
+DO
+Time: 17.647 ms
+
+Gate 4: Bloom Filter Effectiveness (Partitioned)
+=================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:229: NOTICE:  Bloom filter column cardinalities (Nov 2025 optimized config):
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:229: NOTICE:    caller_number: 0.911781 distinct values (partitioned)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:229: NOTICE:    callee_number: 0.90979 distinct values (partitioned)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:229: NOTICE:    (call_id removed - only 1 distinct value)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:229: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:229: WARNING:  🟠 WARNING: Some bloom filter columns have lower cardinality than expected
+DO
+Time: 11.213 ms
+
+Gate 5: Partition Health Check (BONUS for Partitioned)
+=======================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: NOTICE:  Partition distribution analysis:
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: NOTICE:    Total partitions per variant: 24
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: NOTICE:  Row distribution per partition (AO variant):
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: NOTICE:    Min rows: 200000
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: NOTICE:    Max rows: 2100000
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: NOTICE:    Avg rows: 1217083
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: NOTICE:  ✅ PASSED: All partitions are populated
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/11b_validate_results_PARTITIONED.sql:289: WARNING:  🟠 INFO: Partition distribution has some skew (max/min >= 2.0) - expected for realistic traffic patterns
+DO
+Time: 2898.793 ms (00:02.899)
+
+====================================================
+VALIDATION SUMMARY (PARTITIONED VARIANTS)
+====================================================
+
+All validation gates (partitioned):
+  1. Row count consistency: Check above
+  2. PAX configuration bloat: Check above
+  3. INSERT throughput sanity: Check above
+  4. Bloom filter effectiveness: Check above
+  5. Partition health check: Check above (BONUS)
+
+Partitioning benefits validated:
+  • 24 partitions per variant (96 total tables)
+  • Each partition: ~1.74M rows (vs 42M monolithic)
+  • Automatic partition routing working correctly
+  • Storage and performance metrics match expectations
+
+If all gates passed: ✅ Benchmark results are valid (partitioned)!
+If any gates failed: ❌ Review configuration and re-run
+
+Expected benefits vs monolithic:
+  • Phase 2 runtime: 18-35% faster (smaller indexes)
+  • Query performance: 20-30% faster (partition pruning)
+  • Index maintenance: O(n log n) reduction per partition
+
+====================================================
+Benchmark validation complete (partitioned)!
+====================================================

@@ -1,0 +1,17 @@
+Phase 0 (Validation Framework Setup): 0.5s
+Phase 1 (CDR Schema Setup (10K cell towers)): 1.2s
+Phase 2 (Cardinality Analysis): 4.1s
+Phase 3 (Auto-Generate Safe Configuration): 0.2s
+Phase 4 (Create Variants with HEAP (AO/AOCO/PAX/PAX-no-cluster/HEAP) - Track C): 0.2s
+Phase 6a (Streaming INSERTs - Phase 1 (NO INDEXES) - WITH HEAP): 722.4s
+Phase 8 (PAX Z-order Clustering): 46.8s
+Phase 9 (Query Performance Tests (after Phase 1)): 35.6s
+Phase 10a (Collect Metrics - Phase 1 (WITH HEAP)): 10.9s
+Phase 11a (Validate Results - Phase 1 (WITH HEAP)): 7.8s
+Phase 4b (Recreate Tables for Phase 2 (WITH HEAP)): 0.6s
+Phase 5 (Create Indexes (5 per variant, 25 total with HEAP)): 0.3s
+Phase 6b (Streaming INSERTs - Phase 2 (WITH INDEXES) - WITH HEAP): 21728.3s
+Phase 8b (PAX Z-order Clustering (Phase 2)): 47.2s
+Phase 9b (Query Performance Tests (after Phase 2)): 34.4s
+Phase 10b (Collect Metrics - Phase 2 (includes comparison, WITH HEAP)): 14.1s
+Phase 11b (Validate Results - Phase 2 (WITH HEAP)): 7.6s

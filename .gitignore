@@ -2,9 +2,13 @@
 
 # Results directory (generated during execution)
 # Ignore raw results but allow dated summary reports for tracking progress
-results/
-!results/.gitkeep
-!results/**/SUMMARY_*.md
+# Note: Using specific patterns to allow exceptions for important runs
+benchmarks/**/results/run_*
+!benchmarks/**/results/run_heap_*/
+!benchmarks/**/results/run_partitioned_*/
+!benchmarks/**/results/run_optimized_*/
+!benchmarks/**/results/**/SUMMARY_*.md
+results/.gitkeep
 
 # Python bytecode
 __pycache__/

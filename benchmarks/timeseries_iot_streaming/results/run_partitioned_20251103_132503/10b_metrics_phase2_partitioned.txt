@@ -1,0 +1,95 @@
+Timing is on.
+====================================================
+Streaming Benchmark - Phase 10b: Collect Metrics (PARTITIONED)
+====================================================
+
+Section 1: Storage Comparison (Partitioned Variants)
+=====================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:56: ERROR:  division by zero
+Time: 16.893 ms
+
+Section 2: Compression Effectiveness
+=====================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:94: ERROR:  division by zero  (seg0 slice1 10.0.1.211:6000 pid=697923)
+Time: 3017.152 ms (00:03.017)
+
+Section 3: Phase 1 INSERT Performance (No Indexes, Partitioned)
+================================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:147: NOTICE:  Phase 1 metrics found (PARTITIONED PRODUCTION run) - analyzing...
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:147: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:147: NOTICE:  Variant: AO, Batches: 500, Rows: 29210000, Avg Throughput: 268312 rows/sec, Min: 196078, Max: 311526, Total Time: 104.4 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:147: NOTICE:  Variant: PAX-no-cluster, Batches: 500, Rows: 29210000, Avg Throughput: 241571 rows/sec, Min: 178571, Max: 292398, Total Time: 112.3 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:147: NOTICE:  Variant: PAX, Batches: 500, Rows: 29210000, Avg Throughput: 240628 rows/sec, Min: 181818, Max: 292398, Total Time: 112.8 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:147: NOTICE:  Variant: AOCO, Batches: 500, Rows: 29210000, Avg Throughput: 191691 rows/sec, Min: 106383, Max: 267380, Total Time: 126.9 seconds
+DO
+Time: 22.663 ms
+
+Section 4: Phase 2 INSERT Performance (With Indexes, Partitioned)
+==================================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:200: NOTICE:  Phase 2 metrics found (PARTITIONED PRODUCTION run) - analyzing...
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:200: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:200: NOTICE:  Variant: PAX-no-cluster, Batches: 500, Rows: 29210000, Avg Throughput: 144060 rows/sec, Min: 45249, Max: 188679, Total Time: 201.7 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:200: NOTICE:  Variant: AO, Batches: 500, Rows: 29210000, Avg Throughput: 142879 rows/sec, Min: 15198, Max: 200000, Total Time: 212.9 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:200: NOTICE:  Variant: PAX, Batches: 500, Rows: 29210000, Avg Throughput: 142059 rows/sec, Min: 15873, Max: 187266, Total Time: 205.2 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:200: NOTICE:  Variant: AOCO, Batches: 500, Rows: 29210000, Avg Throughput: 120402 rows/sec, Min: 12019, Max: 194553, Total Time: 234.5 seconds
+DO
+Time: 15.742 ms
+
+Section 5: Phase 1 vs Phase 2 Comparison (Index Overhead, Partitioned)
+=======================================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:282: NOTICE:  Both phases complete (partitioned) - comparing...
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:282: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:282: NOTICE:  Variant: AO, Phase 1: 268312 rows/sec, Phase 2: 142879 rows/sec, Degradation: %46.7
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:282: NOTICE:  Variant: AOCO, Phase 1: 191691 rows/sec, Phase 2: 120402 rows/sec, Degradation: %37.2
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:282: NOTICE:  Variant: PAX, Phase 1: 240628 rows/sec, Phase 2: 142059 rows/sec, Degradation: %41.0
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:282: NOTICE:  Variant: PAX-no-cluster, Phase 1: 241571 rows/sec, Phase 2: 144060 rows/sec, Degradation: %40.4
+DO
+Time: 25.146 ms
+
+Section 6: Row Count Verification (Partitioned Variants)
+=========================================================
+
+          table_name           | row_count |      note       
+-------------------------------+-----------+-----------------
+ cdr_ao_partitioned            | 29210000  | (24 partitions)
+ cdr_aoco_partitioned          | 29210000  | (24 partitions)
+ cdr_pax_partitioned           | 29210000  | (24 partitions)
+ cdr_pax_nocluster_partitioned | 29210000  | (24 partitions)
+(4 rows)
+
+Time: 2944.849 ms (00:02.945)
+
+Section 7: Partition Distribution Analysis (BONUS)
+===================================================
+
+Rows per partition (sample from AO variant):
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:  Partition distribution for cdr_ao_partitioned:
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:    cdr_ao_part_day00: 210000 rows
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:    cdr_ao_part_day01: 210000 rows
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:    cdr_ao_part_day02: 210000 rows
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:    cdr_ao_part_day03: 210000 rows
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:    cdr_ao_part_day04: 210000 rows
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:    ... (19 more partitions)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10b_collect_metrics_PARTITIONED.sql:353: NOTICE:  Note: Each partition contains ~1.74M rows (42M ÷ 24)
+DO
+Time: 96.358 ms
+
+====================================================
+Metrics collection complete (partitioned variants)!
+====================================================
+
+Partitioning benefits:
+  • 24 partitions per variant (96 total tables)
+  • Each partition: ~1.74M rows (vs 42M monolithic)
+  • Indexes 24x smaller per partition
+  • Expected Phase 2 speedup: 18-35% vs monolithic
+
+Next: Phase 11b - Validate results (safety gates, partitioned)

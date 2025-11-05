@@ -1,0 +1,83 @@
+Timing is on.
+====================================================
+Streaming Benchmark - Phase 10d: Collect Metrics (WITH HEAP)
+====================================================
+
+Section 1: Storage Comparison
+==============================
+
+  variant_name  |  size   | vs_aoco_ratio |          assessment          
+----------------+---------+---------------+------------------------------
+ AOCO           | 1237 MB |          1.00 | 🏆 Smallest
+ PAX-no-cluster | 1331 MB |          1.08 | ✅ Excellent (<10% overhead)
+ PAX            | 1416 MB |          1.15 | 🟠 Acceptable (<30% overhead)
+ AO             | 1904 MB |          1.54 | ❌ High overhead (>30%)
+ HEAP           | 6100 MB |          4.93 | ❌ High overhead (>30%)
+(5 rows)
+
+Time: 11.797 ms
+
+Section 2: Compression Effectiveness
+=====================================
+
+    variant     | row_count | compressed | estimated_raw | compression_ratio 
+----------------+-----------+------------+---------------+-------------------
+ AOCO           |  36900000 | 309 MB     | 7038 MB       |             22.78
+ PAX-no-cluster |  36900000 | 333 MB     | 7038 MB       |             21.14
+ PAX            |  36900000 | 354 MB     | 7038 MB       |             19.88
+ AO             |  36900000 | 476 MB     | 7038 MB       |             14.78
+ HEAP           |  36900000 | 1525 MB    | 7038 MB       |              4.62
+(5 rows)
+
+Time: 6939.216 ms (00:06.939)
+
+Section 3: Phase 1 INSERT Performance (No Indexes)
+===================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:151: NOTICE:  Phase 1 metrics found (PRODUCTION run) - analyzing...
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:151: NOTICE:  missing error text
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:151: NOTICE:  Variant: HEAP, Batches: 500, Rows: 36900000, Avg Throughput: 297735 rows/sec, Min: 125000, Max: 322581, Total Time: 131.7 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:151: NOTICE:  Variant: AO, Batches: 500, Rows: 36900000, Avg Throughput: 281047 rows/sec, Min: 200000, Max: 310559, Total Time: 128.8 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:151: NOTICE:  Variant: PAX-no-cluster, Batches: 500, Rows: 36900000, Avg Throughput: 251595 rows/sec, Min: 62893, Max: 287356, Total Time: 139.4 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:151: NOTICE:  Variant: PAX, Batches: 500, Rows: 36900000, Avg Throughput: 250812 rows/sec, Min: 156250, Max: 287356, Total Time: 140.0 seconds
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:151: NOTICE:  Variant: AOCO, Batches: 500, Rows: 36900000, Avg Throughput: 209387 rows/sec, Min: 58480, Max: 284900, Total Time: 147.0 seconds
+DO
+Time: 20.680 ms
+
+Section 4: Phase 2 INSERT Performance (With Indexes)
+=====================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:204: NOTICE:  Phase 2 metrics not found (table does not exist)
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:204: NOTICE:  Run 07_streaming_inserts_withindex.sql to generate Phase 2 metrics
+DO
+Time: 1.806 ms
+
+Section 5: Phase 1 vs Phase 2 Comparison (Index Overhead)
+===========================================================
+
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:286: NOTICE:  Both phases required for comparison
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:286: NOTICE:  Current status:
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:286: NOTICE:    ✅ Phase 1 complete
+psql:/home/cbadmin/bom-parts/pax_benchmark/benchmarks/timeseries_iot_streaming/sql/10d_collect_metrics_HEAP.sql:286: NOTICE:    ❌ Phase 2 incomplete
+DO
+Time: 6.738 ms
+
+Section 6: Row Count Verification
+==================================
+
+    table_name     | row_count 
+-------------------+-----------
+ cdr_ao            | 36900000
+ cdr_aoco          | 36900000
+ cdr_pax           | 36900000
+ cdr_pax_nocluster | 36900000
+ cdr_heap          | 36900000
+(5 rows)
+
+Time: 3889.783 ms (00:03.890)
+
+====================================================
+Metrics collection complete!
+====================================================
+
+Next: Phase 11 - Validate results (safety gates)

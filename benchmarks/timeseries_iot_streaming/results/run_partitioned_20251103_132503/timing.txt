@@ -1,0 +1,15 @@
+Phase 0 (Validation Framework Setup): 0.2s
+Phase 1 (CDR Schema Setup (10K cell towers)): 0.7s
+Phase 2 (Cardinality Analysis): 3.9s
+Phase 3 (Auto-Generate Safe Configuration): 0.2s
+Phase 4 (Create Partitioned Variants (AO/AOCO/PAX/PAX-no-cluster) - 96 partitions): 1.3s
+Phase 6a (Streaming INSERTs - Phase 1 (NO INDEXES) - PARTITIONED): 618.1s
+Phase 9 (Query Performance Tests (after Phase 1)): 0.0s
+Phase 10a (Collect Metrics - Phase 1 (PARTITIONED)): 6.4s
+Phase 11a (Validate Results - Phase 1 (PARTITIONED)): 9.2s
+Phase 4b (Recreate Partitioned Tables for Phase 2): 1.7s
+Phase 5 (Create Indexes on Partitions (cascades to 480 partition indexes)): 3.7s
+Phase 6b (Streaming INSERTs - Phase 2 (WITH INDEXES) - PARTITIONED): 1017.0s
+Phase 9b (Query Performance Tests (after Phase 2)): 0.0s
+Phase 10b (Collect Metrics - Phase 2 (includes comparison, PARTITIONED)): 6.1s
+Phase 11b (Validate Results - Phase 2 (PARTITIONED)): 8.3s
