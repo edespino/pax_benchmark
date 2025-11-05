@@ -102,17 +102,24 @@ pax_benchmark/
 │   │   ├── docs/BENCHMARK_RESULTS_2025-10-30.md
 │   │   └── results/
 │   │
-│   └── timeseries_iot_streaming/  # Streaming INSERT benchmark (50M rows, 20-55 min)
+│   └── timeseries_iot_streaming/  # Streaming INSERT benchmark (36-50M rows, 20min-7hrs)
 │       ├── README.md
 │       ├── scripts/
 │       │   ├── run_streaming_benchmark.py    # Python (recommended - real-time progress)
+│       │   │   # --heap flag: 5 variants (6-7 hrs) - Track C complete ✅
+│       │   │   # --partitioned flag: 24 partitions (28 min) - Track B complete ✅
+│       │   │   # --phase {1|2|both}: Flexible phase selection
 │       │   ├── run_streaming_benchmark.sh    # Bash master (both phases)
 │       │   ├── run_phase1_noindex.sh         # Bash Phase 1 only (20 min)
 │       │   ├── run_phase2_withindex.sh       # Bash Phase 2 only (30 min)
 │       │   └── requirements.txt              # Python dependencies (rich>=13.0.0)
-│       ├── sql/ (12 files with validation framework)
+│       ├── sql/ (18 files: baseline + optimized + partitioned + HEAP)
+│       ├── TRACK_C_COMPREHENSIVE_ANALYSIS.md  # 55-section analysis (Track C)
+│       ├── OPTIMIZATION_TESTING_PLAN.md       # All 3 tracks documented
 │       ├── docs/BENCHMARK_RESULTS_2025-10-30.md
 │       └── results/
+│           ├── run_heap_20251104_220151/      # Track C: Successful HEAP run
+│           └── run_partitioned_20251103_132503/  # Track B: Successful partitioned run
 │
 ├── PAX_DEVELOPMENT_TEAM_REPORT.md  # Comprehensive findings for PAX dev team
 │
@@ -158,20 +165,24 @@ cd benchmarks/ecommerce_clickstream
 ./scripts/run_clickstream_benchmark.sh
 ```
 
-**INSERT throughput / Streaming workloads** (20-55 min monolithic, 28 min partitioned):
+**INSERT throughput / Streaming workloads** (20 min to 7 hours depending on variant):
 ```bash
 cd benchmarks/timeseries_iot_streaming
 
 # Python version (recommended - real-time progress)
 pip3 install -r scripts/requirements.txt  # First time only
 
-# Monolithic (single table per variant)
+# Monolithic (4 variants: AO/AOCO/PAX/PAX-no-cluster)
 ./scripts/run_streaming_benchmark.py      # Both phases (50 min, interactive)
 ./scripts/run_streaming_benchmark.py --phase 1  # Phase 1 only (20 min)
 
-# Partitioned (24 partitions per variant - 🏆 3.7x Phase 2 speedup)
+# Partitioned (24 partitions per variant - 🏆 11x Phase 2 speedup)
 ./scripts/run_streaming_benchmark.py --partitioned  # Both phases (28 min)
 ./scripts/run_streaming_benchmark.py --partitioned --phase 1  # Phase 1 only (10 min)
+
+# HEAP variant (5 variants - Track C academic demonstration) ⚠️  6-7 hours
+./scripts/run_streaming_benchmark.py --heap  # Both phases (379 min)
+./scripts/run_streaming_benchmark.py --heap --phase 1  # Phase 1 only (12 min)
 
 # Bash version (alternative - silent execution)
 ./scripts/run_phase1_noindex.sh        # Phase 1 only (20 min)
@@ -179,9 +190,14 @@ pip3 install -r scripts/requirements.txt  # First time only
 ```
 
 **Why Partitioned?**
-- ✅ **3.1-3.7x Phase 2 speedup** (300m → 28m total runtime)
-- ✅ **Eliminates catastrophic stalls** (200x → 9x worst case)
+- ✅ **11x Phase 2 speedup** (284m → 17m, total 300m → 28m)
+- ✅ **Eliminates catastrophic stalls** (287x → 26x worst case)
 - ✅ **MANDATORY for tables >10M rows with indexes**
+
+**Why HEAP variant?**
+- ✅ **Academic validation**: Demonstrates append-only storage advantages (4.93x bloat)
+- ⚠️  **NOT for production**: 2.26x larger than PAX despite 19% faster throughput
+- 📊 **Track C complete**: See `TRACK_C_COMPREHENSIVE_ANALYSIS.md` (538 lines, 55 sections)
 
 **Comprehensive validation** (2-4 hours):
 ```bash

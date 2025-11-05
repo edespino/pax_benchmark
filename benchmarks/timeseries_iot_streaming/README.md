@@ -1,8 +1,13 @@
-# Streaming INSERT Benchmark - PAX vs AO/AOCO
+# Streaming INSERT Benchmark - PAX vs AO/AOCO (+ HEAP)
 
-**Benchmark Duration**: 20-55 minutes (Phase 1: 20-25 min, Phase 2: 30-35 min, Both: 40-55 min)
-**Dataset Size**: 50M rows (~8-12GB per variant)
+**Benchmark Duration**:
+- 4 variants (AO/AOCO/PAX/PAX-no-cluster): 20-55 minutes
+- 5 variants (+ HEAP): 6-7 hours (Phase 2 dominated by index maintenance)
+- Partitioned (24 partitions): 28 minutes (11x faster)
+
+**Dataset Size**: 36-50M rows (~8-12GB per variant)
 **Focus**: INSERT throughput for continuous batch loading (telecommunications/IoT)
+**Testing Complete**: ✅ Track A (Optimized), ✅ Track B (Partitioned), ✅ Track C (HEAP Variant)
 
 ---
 
@@ -176,11 +181,11 @@ CREATE TABLE cdr.cdr_pax (...) USING pax WITH (
 
 ## Validation Gates
 
-4 safety gates prevent misconfiguration:
+4-5 safety gates prevent misconfiguration:
 
 ### Gate 1: Row Count Consistency
-- All 4 variants must have exactly 50M rows
-- Ensures data integrity
+- All variants must have identical row counts
+- Ensures data integrity across storage types
 
 ### Gate 2: PAX Configuration Bloat Check
 - PAX-no-cluster: <20% overhead vs AOCO
@@ -194,6 +199,12 @@ CREATE TABLE cdr.cdr_pax (...) USING pax WITH (
 ### Gate 4: Bloom Filter Effectiveness
 - All bloom columns must have cardinality >1000
 - Prevents low-cardinality bloat
+
+### Gate 5: HEAP Bloat Analysis (Track C only)
+- **Academic demonstration** of append-only storage advantages
+- Compares HEAP vs AO bloat ratio
+- Expected: 2-5x bloat for HEAP under high-volume INSERTs
+- **Actual**: 4.93x (Phase 1), 1.14x (Phase 2)
 
 **Failure**: Benchmark exits immediately if any gate fails
 

@@ -566,6 +566,74 @@ END $$;
 - VACUUM required: **YES** (autovacuum may trigger during run)
 - Production viability: **NO** (storage disaster)
 
+### ✅ ACTUAL RESULTS (November 4-5, 2025) - **COMPLETE**
+
+**Status**: ✅ **ACADEMIC VALIDATION SUCCESSFUL**
+
+**Runtime**: 6 hours 18 minutes (379 minutes total)
+- Phase 1 (no indexes): 12 minutes
+- Phase 2 (with indexes): 6 hours 2 minutes
+
+**Dataset**: 36.9M rows (Phase 1), 36.64M rows (Phase 2)
+
+**Validation**: ✅ All 5 gates passed (including new Gate 5: HEAP bloat analysis)
+
+**Phase 1 Performance (No Indexes)**:
+| Storage | Throughput | vs AO | Storage | vs AOCO | Compression |
+|---------|-----------|-------|---------|---------|-------------|
+| **HEAP** | **297,735 rows/sec** | **+5.9%** 🏆 | **6,100 MB** | **+4.93x** ❌ | **4.62x** |
+| AO | 281,047 rows/sec | 0% | 1,904 MB | +1.54x | 14.78x |
+| PAX-no-cluster | 251,595 rows/sec | -10.5% | 1,331 MB | +1.08x ✅ | 21.14x |
+| PAX | 250,812 rows/sec | -10.8% | 1,416 MB | +1.15x | 19.88x |
+| AOCO | 209,387 rows/sec | -25.5% | 1,237 MB | 1.00x 🏆 | 22.78x |
+
+**Phase 2 Performance (With Indexes)**:
+| Storage | Throughput | vs AO | Storage | vs PAX-no-cluster | Compression |
+|---------|-----------|-------|---------|-------------------|-------------|
+| **HEAP** | **50,725 rows/sec** | **+18.8%** 🏆 | **8,484 MB** | **+2.26x** ❌ | **3.30x** |
+| PAX-no-cluster | 45,566 rows/sec | +6.7% | 3,760 MB | 1.00x 🏆 | 7.45x |
+| PAX | 45,526 rows/sec | +6.6% | 3,827 MB | +1.02x | 7.28x |
+| AO | 42,713 rows/sec | 0% | 7,441 MB | +1.98x | 3.78x |
+| AOCO | 31,903 rows/sec | -25.3% | 6,833 MB | +1.82x | 4.08x |
+
+**Index Degradation (Phase 1 → Phase 2)**:
+| Storage | Phase 1 | Phase 2 | Degradation % | Ranking |
+|---------|---------|---------|---------------|---------|
+| **PAX** | 250,812 | 45,526 | **81.8%** | 🏆 Best |
+| **PAX-no-cluster** | 251,595 | 45,566 | **81.9%** | 🥈 2nd |
+| **HEAP** | 297,735 | 50,725 | **83.0%** | 🥉 3rd |
+| AO | 281,047 | 42,713 | 84.8% | 4th |
+| AOCO | 209,387 | 31,903 | 84.8% | 4th |
+
+**HEAP Bloat Analysis (Gate 5)**:
+- Phase 1 bloat: **4.93x** larger than AOCO (6,100 MB vs 1,237 MB)
+- Phase 2 bloat: **1.14x** larger than AO (8,484 MB vs 7,441 MB)
+- **Unexpected**: Phase 2 bloat minimal (expected 2-4x, actual 1.14x)
+- **Reason**: Insert-only workload, no UPDATE/DELETE, no autovacuum needed
+
+**Key Findings**:
+1. ✅ **HEAP fastest throughput**: 5.9% faster (Phase 1), 18.8% faster (Phase 2)
+2. ❌ **HEAP catastrophic storage**: 4.93x larger Phase 1, 2.26x larger Phase 2 vs PAX
+3. ✅ **PAX optimal for production**: 90% of HEAP throughput, 2.26x smaller
+4. ✅ **PAX best index resilience**: 81.8% degradation vs 83.0% HEAP
+5. ⚠️ **HEAP Phase 2 paradox**: Expected >2x bloat, actual 1.14x (insert-only workload)
+
+**Academic Validation Success**:
+- ✅ Demonstrates why append-only storage exists (4.93x Phase 1 bloat savings)
+- ✅ Shows HEAP throughput advantage (5.9-18.8% faster)
+- ✅ Proves PAX optimality (2.26x storage savings for only 10% throughput penalty)
+
+**Production Guidance**:
+- **Use PAX** for streaming workloads: 2.26x smaller than HEAP, 90% throughput
+- **Avoid HEAP** for >10M rows: Unbounded bloat risk, VACUUM overhead
+- **Partitioning + PAX**: Optimal combination (see Track B: 11x speedup)
+
+**Comprehensive Analysis**: See `TRACK_C_COMPREHENSIVE_ANALYSIS.md` (538 lines, 55 sections)
+
+**Results**: See `results/run_heap_20251104_220151/SUMMARY_2025-11-04_HEAP_SUCCESS.md`
+
+---
+
 ### Documentation Updates
 
 **File**: `benchmarks/timeseries_iot_streaming/docs/HEAP_VARIANT_RESULTS.md`
